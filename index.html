@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Horaires Bus - Temps Réel</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="script.js"></script>
+</head>
+<body>
+  <!-- Titre : uniquement le nom de l'arrêt -->
+  <h1 id="stop-name">Lancy-Bachet, gare</h1>
+
+  <!-- Boîte des filtres -->
+  <div class="filter-container">
+    <button id="toggle-filter">Filtres de lignes ▼</button>
+    <div id="line-filter-box" class="hidden">
+      <!-- Les checkboxes des lignes seront générées dynamiquement ici -->
+    </div>
+  </div>
+
+  <!-- Bouton plein écran -->
+<button id="fullscreen-toggle">Plein écran ↗️</button>
+
+  <!-- Affichage de la dernière mise à jour -->
+  <p id="last-update">Dernière mise à jour: <span id="update-time">-</span></p>
+
+  <!-- Conteneur des départs -->
+  <div id="departures"></div>
+</body>
+</html>
