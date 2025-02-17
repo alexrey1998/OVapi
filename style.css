@@ -20,10 +20,23 @@ h1 {
   margin-bottom: 20px;
 }
 
+/* Nouvelle barre de contrôle pour aligner horizontalement la dernière mise à jour et les boutons */
+#control-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* Ajustement de la marge pour le filtre lorsqu'il est dans la barre de contrôle */
+#control-bar .filter-container {
+  margin-bottom: 0;
+}
+
 /* Dernière mise à jour */
 #last-update {
   font-size: 1rem;
-  margin-bottom: 20px;
+  margin-bottom: 0; /* Suppression de la marge pour un alignement vertical centré */
 }
 
 /* Boutons (actualisation & filtre) */
@@ -43,16 +56,6 @@ h1 {
 }
 
 /* Boîte des filtres */
-.filter-container {
-  margin-bottom: 10px;
-}
-
-#toggle-filter {
-  display: block;
-  width: 10%;
-  text-align: left;
-}
-
 #line-filter-box {
   background: white;
   border: 1px solid #ddd;
