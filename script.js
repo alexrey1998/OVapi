@@ -1,7 +1,7 @@
 import { lineColors } from "./colors.js";
 
 document.addEventListener("DOMContentLoaded", function () {
-  const STOP_NAME = "Genève";
+  const STOP_NAME = "Lancy-Bachet, gare";
   const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${STOP_NAME}&limit=30`;
   const departuresContainer = document.getElementById("departures");
   const lastUpdateElement = document.getElementById("update-time");
