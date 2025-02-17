@@ -1,7 +1,7 @@
 import { lineColors } from "./colors.js";
 
 document.addEventListener("DOMContentLoaded", function () {
-  const STOP_NAME = "Lancy-Bachet, gare";
+  const STOP_NAME = "Vésenaz, Petray";
   
   // Injection du nom de l'arrêt dans le h1
   document.getElementById("stop-name").textContent = STOP_NAME;
