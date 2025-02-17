@@ -2,6 +2,10 @@ import { lineColors } from "./colors.js";
 
 document.addEventListener("DOMContentLoaded", function () {
   const STOP_NAME = "Lancy-Bachet, gare";
+  
+  // Injection du nom de l'arrêt dans le h1
+  document.getElementById("stop-name").textContent = STOP_NAME;
+
   const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${STOP_NAME}&limit=30`;
   const departuresContainer = document.getElementById("departures");
   const lastUpdateElement = document.getElementById("update-time");
@@ -16,16 +20,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
 
-fullscreenToggleBtn.addEventListener("click", () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
-    document.body.classList.add("fullscreen");
-  } else {
-    document.exitFullscreen();
-    document.body.classList.remove("fullscreen");
-  }
-});
-
+  fullscreenToggleBtn.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      document.body.classList.add("fullscreen");
+    } else {
+      document.exitFullscreen();
+      document.body.classList.remove("fullscreen");
+    }
+  });
 
   function updateLastUpdateTime() {
     const now = new Date();
@@ -37,8 +40,6 @@ fullscreenToggleBtn.addEventListener("click", () => {
   }
 
   function fetchDepartures() {
-    // Ne rien faire ici, on attend que les données soient prêtes avant de changer l'affichage
-
     fetch(API_URL)
       .then(response => response.json())
       .then(data => {
@@ -47,16 +48,45 @@ fullscreenToggleBtn.addEventListener("click", () => {
 
         const lines = [...new Set(departures.map(dep => dep.category + ' ' + dep.number))];
 
-        filterBox.innerHTML = "";
-        lines.forEach(line => {
-          const checked = selectedLines.has(line) ? "checked" : "";
-          filterBox.innerHTML += `
-            <label class="filter-item">
-              <input type="checkbox" value="${line}" ${checked} class="line-checkbox"> Ligne ${line}
-            </label>
-          `;
+        // Tri des lignes pour qu'elles soient classées comme les cartes
+        lines.sort((a, b) => {
+          const numA = a.split(" ").pop();
+          const numB = b.split(" ").pop();
+          const isNumA = !isNaN(numA);
+          const isNumB = !isNaN(numB);
+          if (isNumA && isNumB) {
+            return parseInt(numA) - parseInt(numB);
+          } else if (isNumA) {
+            return -1;
+          } else if (isNumB) {
+            return 1;
+          } else {
+            return numA.localeCompare(numB);
+          }
         });
 
+        // Si aucune ligne n'est sélectionnée par défaut, on sélectionne toutes les lignes
+        if (selectedLines.size === 0) {
+          lines.forEach(line => selectedLines.add(line));
+        }
+
+        // Génération de la boîte des filtres avec les boutons de sélection/désélection et la liste des cases à cocher
+        filterBox.innerHTML = `
+          <div id="select-all-container">
+            <button id="select-all">Sélectionner tout</button>
+            <button id="deselect-all">Désélectionner tout</button>
+          </div>
+          <div id="checkboxes-container">
+            ${lines.map(line => {
+              const checked = selectedLines.has(line) ? "checked" : "";
+              return `<label class="filter-item">
+                        <input type="checkbox" value="${line}" ${checked} class="line-checkbox"> Ligne ${line}
+                      </label>`;
+            }).join('')}
+          </div>
+        `;
+
+        // Ajout des écouteurs d'événement sur les cases à cocher
         document.querySelectorAll(".line-checkbox").forEach(checkbox => {
           checkbox.addEventListener("change", () => {
             if (checkbox.checked) {
@@ -68,9 +98,21 @@ fullscreenToggleBtn.addEventListener("click", () => {
           });
         });
 
-        if (selectedLines.size === 0) {
+        // Ajout des écouteurs d'événement sur les boutons de sélection/désélection
+        const selectAllBtn = document.getElementById("select-all");
+        const deselectAllBtn = document.getElementById("deselect-all");
+
+        selectAllBtn.addEventListener("click", () => {
           lines.forEach(line => selectedLines.add(line));
-        }
+          document.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
+          renderDepartures(departures);
+        });
+
+        deselectAllBtn.addEventListener("click", () => {
+          selectedLines.clear();
+          document.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
+          renderDepartures(departures);
+        });
 
         renderDepartures(departures);
         updateLastUpdateTime();
