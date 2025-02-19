@@ -331,5 +331,5 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   
   fetchDepartures();
-  setInterval(fetchDepartures, 60000);
+  setInterval(fetchDepartures, 10000);
 });
