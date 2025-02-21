@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TP-Live</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="script.js"></script>
+</head>
+<body>
+  <!-- Titre : le nom de l'arrêt est désormais injecté par le script et est éditable -->
+  <h1 id="stop-name" contenteditable="true">Entrez le nom de l'arrêt ici</h1>
+  <!-- Suggestions pour le nom de l'arrêt -->
+  <div id="stop-suggestions"></div>
+
+  <!-- Barre de contrôle regroupant la dernière mise à jour, le bouton plein écran et le filtre de lignes -->
+  <div id="control-bar">
+    <p id="last-update">Dernière mise à jour: <span id="update-time">-</span></p>
+    <button id="fullscreen-toggle">Plein écran ↗️</button>
+    <div class="filter-container">
+      <button id="toggle-filter">Filtres de lignes ▼</button>
+      <div id="line-filter-box" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- Conteneur des départs -->
+  <div id="departures"></div>
+</body>
+</html>
