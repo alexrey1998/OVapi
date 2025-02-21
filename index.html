@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TP-Live</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#007bff">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="script.js"></script>
 </head>
@@ -25,5 +29,18 @@
 
   <!-- Conteneur des départs -->
   <div id="departures"></div>
+  
+  <!-- Enregistrement du service worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(registration => {
+          console.log('Service Worker enregistré avec succès:', registration);
+        })
+        .catch(error => {
+          console.error('Erreur lors de l’enregistrement du Service Worker:', error);
+        });
+    }
+  </script>
 </body>
 </html>
