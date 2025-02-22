@@ -1,6 +1,21 @@
 import { lineColors } from "./colors.js";
 
 document.addEventListener("DOMContentLoaded", function () {
+  // Gestion de la bannière d'information
+  if (localStorage.getItem("bannerClosed") === "true") {
+    const banner = document.getElementById("banner");
+    if (banner) {
+      banner.style.display = "none";
+    }
+  } else {
+    const closeButton = document.getElementById("banner-close");
+    closeButton.addEventListener("click", function () {
+      const banner = document.getElementById("banner");
+      banner.style.display = "none";
+      localStorage.setItem("bannerClosed", "true");
+    });
+  }
+  
   let STOP_NAME = "Entrez le nom de l'arrêt ici";
   const stopNameEl = document.getElementById("stop-name");
   const suggestionsContainer = document.getElementById("stop-suggestions");
