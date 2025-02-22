@@ -12,6 +12,12 @@
   <script type="module" src="script.js"></script>
 </head>
 <body>
+  <!-- Bannière d'information affichée lors de la première visite -->
+  <div id="banner">
+    <span>Aucune donnée personnelle n’est collectée. Toutes les informations sont stockées localement sur votre appareil pour améliorer votre expérience.</span>
+    <button id="banner-close">×</button>
+  </div>
+
   <!-- Titre : le nom de l'arrêt est désormais injecté par le script et est éditable -->
   <h1 id="stop-name" contenteditable="true">Entrez le nom de l'arrêt ici</h1>
   <!-- Suggestions pour le nom de l'arrêt -->
@@ -29,18 +35,5 @@
 
   <!-- Conteneur des départs -->
   <div id="departures"></div>
-  
-  <!-- Enregistrement du service worker -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(registration => {
-          console.log('Service Worker enregistré avec succès:', registration);
-        })
-        .catch(error => {
-          console.error('Erreur lors de l’enregistrement du Service Worker:', error);
-        });
-    }
-  </script>
 </body>
 </html>
