@@ -154,9 +154,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .then(response => response.json())
       .then(data => {
         const stations = data.stations || [];
-        // Filtrer côté client : conserver les entrées dont la propriété "type" est absente ou égale à "station"
         const filteredStations = stations.filter(s => !s.type || s.type.toLowerCase() === "station");
-        // Trier par distance à l'aide de la formule de Haversine
         const suggestions = filteredStations.sort((a, b) => {
           const d1 = computeDistance(userLocation.lat, userLocation.lon, a.coordinate.x, a.coordinate.y);
           const d2 = computeDistance(userLocation.lat, userLocation.lon, b.coordinate.x, b.coordinate.y);
@@ -291,6 +289,14 @@ document.addEventListener("DOMContentLoaded", function () {
       document.documentElement.requestFullscreen();
       document.body.classList.add("fullscreen");
     } else {
+      document.exitFullscreen();
+      document.body.classList.remove("fullscreen");
+    }
+  });
+  
+  // Nouvelle fonctionnalité : quitter le mode fullscreen si l'utilisateur clique en dehors du champ de recherche
+  document.addEventListener("click", function(e) {
+    if (document.fullscreenElement && !e.target.closest("#stop-name")) {
       document.exitFullscreen();
       document.body.classList.remove("fullscreen");
     }
