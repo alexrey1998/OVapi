@@ -14,6 +14,27 @@ body {
   padding: 20px;
 }
 
+/* Bannière d'information en haut de la page */
+#banner {
+  background-color: #fff;
+  color: red; /* Texte en rouge */
+  padding: 10px;
+  text-align: center;
+  position: relative;
+  border-bottom: 1px solid #ccc;
+}
+
+#banner button {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
 /* Titre */
 h1 {
   font-size: 1.8rem;
