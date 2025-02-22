@@ -16,12 +16,16 @@ body {
 
 /* Bannière d'information en haut de la page */
 #banner {
-  background-color: #fff;
-  color: red; /* Texte en rouge */
+  background-color: #e8e8e8;
+  color: #ffffff; /* Texte en blanc */
   padding: 10px;
   text-align: center;
   position: relative;
   border-bottom: 1px solid #ccc;
+}
+
+#banner p {
+  margin: 0;
 }
 
 #banner button {
@@ -33,6 +37,7 @@ body {
   font-size: 20px;
   line-height: 20px;
   cursor: pointer;
+  color: #ffffff;
 }
 
 /* Titre */
