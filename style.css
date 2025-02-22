@@ -31,11 +31,11 @@ body {
 #banner button {
   position: absolute;
   right: 10px;
-  top: 10px;
+  bottom: 10px;
   background: transparent;
   border: none;
-  font-size: 20px;
-  line-height: 20px;
+  font-size: 30px; /* Augmenté de 1.5 fois (20px -> 30px) */
+  line-height: 30px;
   cursor: pointer;
   color: #ffffff;
 }
