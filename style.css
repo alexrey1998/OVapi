@@ -177,6 +177,7 @@ body.fullscreen #departures {
   flex-grow: 1;
   display: grid;
   grid-template-columns: 1fr; /* Une seule colonne pour un affichage vertical complet */
+  justify-items: start; /* Empêche les cartes de s'étendre */
   grid-auto-rows: auto;
   gap: 6px; /* Espacement réduit entre les cartes */
   height: calc(100vh - 150px); /* Ajustement pour tenir compte des autres éléments (titre, control-bar, etc.) */
@@ -186,6 +187,7 @@ body.fullscreen .line-card {
   min-height: 80px; /* Légère réduction pour économiser de l'espace */
   padding: 8px; /* Réduction des padding */
   box-sizing: border-box;
+  justify-self: start; /* Empêche l'extension de la carte */
 }
 body.fullscreen .line-title {
   font-size: 1.1em; /* Légère réduction tout en restant lisible */
