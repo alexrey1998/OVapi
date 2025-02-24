@@ -189,3 +189,18 @@ body.fullscreen .destination-title,
 body.fullscreen .departure-times {
   font-size: 0.9em;
 }
+
+/* Modifications pour l'affichage en mode fullscreen sur téléphone */
+@media (max-width: 600px) {
+  body.fullscreen #departures {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    align-content: space-evenly;
+    gap: 8px;
+  }
+  body.fullscreen .line-card {
+    padding: 8px;
+    margin: 4px;
+    font-size: 0.75rem;
+    min-height: auto;
+  }
+}
