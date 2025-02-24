@@ -17,7 +17,7 @@ body {
 /* Bannière d'information en haut de la page */
 #banner {
   background-color: #eb0000;
-  color: #ffffff; /* Texte en blanc */
+  color: #ffffff;
   padding: 10px;
   text-align: center;
   position: relative;
@@ -34,7 +34,7 @@ body {
   bottom: 10px;
   background: transparent;
   border: none;
-  font-size: 30px; /* Augmenté de 1.5 fois (20px -> 30px) */
+  font-size: 30px;
   line-height: 30px;
   cursor: pointer;
   color: #ffffff;
@@ -163,7 +163,7 @@ h1 {
 
 body.fullscreen #toggle-filter,
 body.fullscreen #fullscreen-toggle {
-  display: none; /* Cache les boutons en plein écran */
+  display: none;
 }
 body.fullscreen {
   height: 100vh;
@@ -190,17 +190,57 @@ body.fullscreen .departure-times {
   font-size: 0.9em;
 }
 
-/* Modifications pour l'affichage en mode fullscreen sur téléphone */
+/* Nouveau design pour le mode fullscreen sur petit écran */
 @media (max-width: 600px) {
-  body.fullscreen #departures {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    align-content: space-evenly;
-    gap: 8px;
+  /* Fixer le nom de l'arrêt en haut en tant qu'en-tête */
+  body.fullscreen #stop-name {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: #007bff;
+    color: #fff;
+    font-size: 1.5rem;
+    text-align: center;
+    padding: 10px;
+    z-index: 1001;
   }
+  /* La zone des départs s'affiche en dessous de l'en-tête et occupe tout l'espace restant */
+  body.fullscreen #departures {
+    margin-top: 60px; /* espace pour l'en-tête fixe */
+    display: block;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
+    padding: 0 10px;
+  }
+  /* Chaque carte de départ occupe toute la largeur disponible avec un design moderne */
   body.fullscreen .line-card {
-    padding: 8px;
-    margin: 4px;
-    font-size: 0.75rem;
-    min-height: auto;
+    width: 100%;
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background-color: #fff;
+  }
+  body.fullscreen .line-title {
+    font-size: 1.2rem;
+    margin-bottom: 5px;
+  }
+  body.fullscreen .destination-title {
+    font-size: 1rem;
+    font-weight: bold;
+    margin: 5px 0;
+  }
+  body.fullscreen .departure-times {
+    font-size: 0.9rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  body.fullscreen .departure-item {
+    background: #eee;
+    padding: 3px 7px;
+    border-radius: 5px;
+    font-size: 0.9rem;
   }
 }
