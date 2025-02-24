@@ -161,7 +161,6 @@ h1 {
   font-size: 1rem;
 }
 
-/* --- Mode fullscreen --- */
 body.fullscreen #toggle-filter,
 body.fullscreen #fullscreen-toggle {
   display: none; /* Cache les boutons en plein écran */
@@ -171,26 +170,22 @@ body.fullscreen {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 10px; /* Réduction du padding pour maximiser l'espace */
 }
 body.fullscreen #departures {
   flex-grow: 1;
-  display: grid;
-  grid-template-columns: 1fr; /* Une seule colonne pour un affichage vertical complet */
-  grid-auto-rows: auto;
-  gap: 6px; /* Espacement réduit entre les cartes */
-  height: calc(100vh - 150px); /* Ajustement pour tenir compte des autres éléments (titre, control-bar, etc.) */
-  overflow: hidden;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  align-content: start;
+  gap: 12px;
+  height: 100%;
 }
 body.fullscreen .line-card {
-  min-height: 80px; /* Légère réduction pour économiser de l'espace */
-  padding: 8px; /* Réduction des padding */
+  min-height: 100px;
   box-sizing: border-box;
 }
 body.fullscreen .line-title {
-  font-size: 1.1em; /* Légère réduction tout en restant lisible */
+  font-size: 1.2em;
 }
 body.fullscreen .destination-title,
 body.fullscreen .departure-times {
-  font-size: 1em; /* Augmentation par rapport à 0.9em pour une meilleure lisibilité */
+  font-size: 0.9em;
 }
