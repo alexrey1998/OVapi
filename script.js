@@ -16,8 +16,37 @@ function maxDisplayMinutes() {
   return Math.floor(ms / 60000);
 }
 function refreshIntervalMs() {
-  // fallback 60s si valeur invalide
   return parseHMSToMs(settings.refreshInterval) || 60000;
+}
+
+// ---------- Utils texte ----------
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+/**
+ * Formate un nom d’arrêt :
+ * - si contient une virgule, la partie après la virgule (incluse) est affichée
+ *   avec un ratio de taille et une couleur configurables.
+ */
+function formatStopNameHTML(name) {
+  const str = String(name ?? "");
+  const idx = str.indexOf(",");
+  if (idx === -1) return escapeHTML(str);
+
+  const main = str.slice(0, idx);          // avant la virgule
+  const suffix = str.slice(idx);           // virgule + après
+
+  const ratio = Number(settings?.stopSuffix?.sizeRatioPercent) || 100;
+  const colorRaw = (settings?.stopSuffix?.color ?? "default").trim();
+  const colorCSS = (colorRaw.toLowerCase() === "default") ? "inherit" : colorRaw;
+
+  const sizeCSS = `${ratio}%`;
+  const colorStyle = colorCSS === "inherit" ? "" : `color:${escapeHTML(colorCSS)};`;
+
+  return `${escapeHTML(main)}<span class="stop-suffix" style="font-size:${sizeCSS};${colorStyle}">${escapeHTML(suffix)}</span>`;
 }
 
 // Chargement du fichier CSV des gares suisses
@@ -49,9 +78,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Gestion de la bannière d'information
   if (localStorage.getItem("bannerClosed") === "true") {
     const banner = document.getElementById("banner");
-    if (banner) {
-      banner.style.display = "none";
-    }
+    if (banner) banner.style.display = "none";
   } else {
     const closeButton = document.getElementById("banner-close");
     closeButton.addEventListener("click", function () {
@@ -64,16 +91,21 @@ document.addEventListener("DOMContentLoaded", function () {
   let STOP_NAME = "Entrez le nom de l'arrêt ici";
   const stopNameEl = document.getElementById("stop-name");
   const suggestionsContainer = document.getElementById("stop-suggestions");
-  stopNameEl.textContent = STOP_NAME;
+
+  function renderStopNameToTitle() {
+    // stylise uniquement l’affichage (le texte brut reste accessible via textContent)
+    stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+  }
+  renderStopNameToTitle();
 
   // Variable pour suivre l'indice de suggestion actuellement sélectionnée
   let currentSuggestionIndex = -1;
   // Variable pour stocker la position de l'utilisateur
   let userLocation = null;
 
-  // Fonction de calcul de la distance (formule de Haversine) entre deux points (en km)
+  // Fonction de calcul de la distance (Haversine)
   function computeDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Rayon de la Terre en km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -83,22 +115,18 @@ document.addEventListener("DOMContentLoaded", function () {
     return R * c;
   }
 
-  // Fonction pour mettre à jour la mise en surbrillance des suggestions
   function updateSuggestionHighlight() {
     const suggestionItems = suggestionsContainer.querySelectorAll("div");
     suggestionItems.forEach((item, index) => {
-      if (index === currentSuggestionIndex) {
-        item.classList.add("selected");
-      } else {
-        item.classList.remove("selected");
-      }
+      if (index === currentSuggestionIndex) item.classList.add("selected");
+      else item.classList.remove("selected");
     });
   }
 
-  // Lors d'un clic sur le h1, vider le contenu, actualiser la localisation et afficher les suggestions
+  // Clic sur le titre : vider le contenu, géoloc & suggestions
   stopNameEl.addEventListener("click", function() {
     if (this.textContent.trim() !== "") {
-      this.textContent = "";
+      this.textContent = ""; // retire la stylisation pendant la saisie
     }
     updateUserLocation(function() {
       if (userLocation && stopNameEl.textContent.trim() === "") {
@@ -108,7 +136,7 @@ document.addEventListener("DOMContentLoaded", function () {
     this.focus();
   });
 
-  // Lors d'une saisie, récupérer les suggestions via une requête texte
+  // Saisie dans le titre
   stopNameEl.addEventListener("input", function() {
     currentSuggestionIndex = -1;
     const query = this.textContent.trim();
@@ -124,7 +152,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Gestion des flèches haut/bas et de la touche Entrée
+  // Flèches/Entrée dans le titre
   stopNameEl.addEventListener("keydown", function(e) {
     const suggestionItems = suggestionsContainer.querySelectorAll("div");
     if (e.key === "ArrowDown") {
@@ -148,7 +176,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         const chosenName = suggestionItems[currentSuggestionIndex].textContent;
         STOP_NAME = chosenName;
-        stopNameEl.textContent = chosenName;
+        renderStopNameToTitle();
         selectedLines.clear();
         suggestionsContainer.innerHTML = "";
         suggestionsContainer.style.display = "none";
@@ -161,7 +189,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Au blur, vider les suggestions et lancer la recherche
+  // Au blur : fermer suggestions, mettre à jour le STOP_NAME & styliser
   stopNameEl.addEventListener("blur", function() {
     setTimeout(() => {
       suggestionsContainer.innerHTML = "";
@@ -170,10 +198,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }, 200);
     STOP_NAME = this.textContent.trim();
     selectedLines.clear();
+    renderStopNameToTitle();
     fetchDepartures();
   });
 
-  // Fonction pour actualiser la localisation (au chargement et lors du clic)
+  // Géoloc
   function updateUserLocation(callback) {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(function(position) {
@@ -192,28 +221,27 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Fonction pour récupérer les suggestions basées sur la localisation
+  // Suggestions par localisation
   function fetchSuggestionsByLocation(lon, lat, callback) {
     const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
     fetch(url)
       .then(response => response.json())
       .then(data => {
-        const stations = data.stations || [];
-        const filteredStations = stations.filter(s => !s.type || s.type.toLowerCase() === "station");
-        const suggestions = filteredStations.sort((a, b) => {
+        const stations = (data.stations || []).filter(s => !s.type || s.type.toLowerCase() === "station");
+        const suggestions = stations.sort((a, b) => {
           const d1 = computeDistance(userLocation.lat, userLocation.lon, a.coordinate.x, a.coordinate.y);
           const d2 = computeDistance(userLocation.lat, userLocation.lon, b.coordinate.x, b.coordinate.y);
           return d1 - d2;
         }).slice(0, 5);
         if (document.activeElement === stopNameEl && stopNameEl.textContent.trim() === "") {
-          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${s.name}</div>`).join("");
+          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${escapeHTML(s.name)}</div>`).join("");
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div").forEach((suggestionEl, index) => {
             suggestionEl.addEventListener("mousedown", function() {
               const chosenName = suggestions[index].name;
               STOP_NAME = chosenName;
-              stopNameEl.textContent = chosenName;
+              renderStopNameToTitle();
               selectedLines.clear();
               suggestionsContainer.innerHTML = "";
               suggestionsContainer.style.display = "none";
@@ -226,36 +254,31 @@ document.addEventListener("DOMContentLoaded", function () {
             });
           });
         }
-        if (typeof callback === "function") {
-          callback(suggestions);
-        }
+        if (typeof callback === "function") callback(suggestions);
       })
       .catch(error => {
         console.error("Erreur lors de la récupération des suggestions par localisation", error);
-        if (typeof callback === "function") {
-          callback([]);
-        }
+        if (typeof callback === "function") callback([]);
       });
   }
 
-  // Fonction pour récupérer les suggestions par saisie texte (filtrées selon la propriété type)
+  // Suggestions par saisie texte
   function fetchSuggestions(query) {
     const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}`;
     fetch(url)
       .then(response => response.json())
       .then(data => {
-        const stations = data.stations || [];
-        const filteredStations = stations.filter(s => !s.type || s.type.toLowerCase() === "station");
-        const suggestions = filteredStations.slice(0, 5);
+        const stations = (data.stations || []).filter(s => !s.type || s.type.toLowerCase() === "station");
+        const suggestions = stations.slice(0, 5);
         if (suggestions.length > 0) {
-          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${s.name}</div>`).join("");
+          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${escapeHTML(s.name)}</div>`).join("");
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div").forEach((suggestionEl, index) => {
             suggestionEl.addEventListener("mousedown", function() {
               const chosenName = suggestions[index].name;
               STOP_NAME = chosenName;
-              stopNameEl.textContent = chosenName;
+              renderStopNameToTitle();
               selectedLines.clear();
               suggestionsContainer.innerHTML = "";
               suggestionsContainer.style.display = "none";
@@ -278,7 +301,7 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   }
 
-  // Modification A : Fonction pour ajuster la destination des trains hors de Suisse
+  // Ajustement destination hors Suisse
   async function adjustTrainDestination(dep) {
     const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
     try {
@@ -306,7 +329,7 @@ document.addEventListener("DOMContentLoaded", function () {
     return null;
   }
 
-  // Nouvelle fonction pour vérifier si un arrêt possède au moins un départ dans la fenêtre paramétrée
+  // Vérifie s'il y a des départs affichables pour un arrêt
   async function checkDeparturesForStop(stopNameCandidate) {
     const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopNameCandidate)}&limit=${settings.stationboardLimit}`;
     try {
@@ -325,7 +348,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Nouveau code adapté pour mettre à jour STOP_NAME avec l'arrêt le plus proche ayant des départs à afficher
+  // Choix auto de l’arrêt proche avec départs
   if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
     updateUserLocation(function() {
       if (userLocation) {
@@ -335,7 +358,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const hasDepartures = await checkDeparturesForStop(candidateStop);
             if (hasDepartures) {
               STOP_NAME = candidateStop;
-              stopNameEl.textContent = candidateStop;
+              renderStopNameToTitle();
               fetchDepartures();
               break;
             }
@@ -431,7 +454,7 @@ document.addEventListener("DOMContentLoaded", function () {
   ${lines.map(line => {
     const checked = selectedLines.has(line) ? "checked" : "";
     return `<label class="filter-item">
-      <input type="checkbox" value="${line}" ${checked} class="line-checkbox"> Ligne ${line}
+      <input type="checkbox" value="${escapeHTML(line)}" ${checked} class="line-checkbox"> Ligne ${escapeHTML(line)}
     </label>`;
   }).join('')}
 </div>
@@ -539,7 +562,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (textWidth < 21.5) extraPadding = (21.5 - textWidth) / 2;
       const horizontalPadding = 11 + extraPadding;
 
-      const lineBadgeHTML = `<span class="line-badge" style="background-color:${lineColor};color:white;padding:5px ${horizontalPadding}px;border-radius:15px;">${content}</span>`;
+      const lineBadgeHTML = `<span class="line-badge" style="background-color:${lineColor};color:white;padding:5px ${horizontalPadding}px;border-radius:15px;">${escapeHTML(content)}</span>`;
       const lineTitleHTML = `<div class="line-title">${lineBadgeHTML}</div>`;
       const lineCard = document.createElement("div");
       lineCard.classList.add("line-card");
@@ -554,7 +577,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (displayDestination === "Zürich Flughafen" || displayDestination === "Genève-Aéroport") {
             displayDestination += " ✈";
           }
-          lineCard.innerHTML += `<div class="destination-title">${displayDestination}</div>`;
+          lineCard.innerHTML += `<div class="destination-title">${formatStopNameHTML(displayDestination)}</div>`;
           lineCard.innerHTML += `<div class="departure-times">` + times.slice(0, 5).map(depObj => {
             let delayStr = "";
             if (depObj.delay !== null && (depObj.delay <= -2 || depObj.delay >= 2)) {
@@ -563,8 +586,8 @@ document.addEventListener("DOMContentLoaded", function () {
               if (delayValue >= 5) delayStr = ` <span style="color:#eb0000;">${sign}${delayValue}'</span>`;
               else delayStr = ` ${sign}${delayValue}'`;
             }
-            let platformStr = depObj.platform ? ` pl. ${depObj.platform}` : "";
-            return `<span class="departure-item">${depObj.time}${delayStr} (${depObj.minutesLeft} min)${platformStr}</span>`;
+            const platformStr = depObj.platform ? ` pl. ${escapeHTML(depObj.platform)}` : "";
+            return `<span class="departure-item">${escapeHTML(depObj.time)}${delayStr} (${depObj.minutesLeft} min)${platformStr}</span>`;
           }).join(" ") + `</div>`;
         }
       }
@@ -575,7 +598,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Premier chargement + rafraîchissement périodique paramétrable
+  // Premier chargement + rafraîchissement
   fetchDepartures();
   setInterval(fetchDepartures, refreshIntervalMs());
 });
