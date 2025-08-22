@@ -15,6 +15,6 @@ export const settings = {
     prefixScalePct: 80,
     // Couleur du SUFFIXE (et de tout le nom s’il n’y a pas de virgule).
     // "default" = couleur par défaut du texte. Sinon, toute valeur CSS valide "blue", "#008000", etc.
-    suffixColor: "default"
+    suffixColor: "#2d327d"
   }
 };
