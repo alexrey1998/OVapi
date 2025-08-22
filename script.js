@@ -1,6 +1,25 @@
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
+// ---------- Utils durée ----------
+function parseHMSToMs(hms) {
+  if (typeof hms !== "string") return 0;
+  const m = /^(\d{1,2}):([0-5]?\d):([0-5]?\d)$/.exec(hms.trim());
+  if (!m) return 0;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  const ss = parseInt(m[3], 10);
+  return ((hh * 3600) + (mm * 60) + ss) * 1000;
+}
+function maxDisplayMinutes() {
+  const ms = parseHMSToMs(settings.maxDisplayPeriod);
+  return Math.floor(ms / 60000);
+}
+function refreshIntervalMs() {
+  // fallback 60s si valeur invalide
+  return parseHMSToMs(settings.refreshInterval) || 60000;
+}
+
 // Chargement du fichier CSV des gares suisses
 let swissStationsSet = new Set();
 loadSwissStations();
@@ -261,8 +280,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Modification A : Fonction pour ajuster la destination des trains hors de Suisse
   async function adjustTrainDestination(dep) {
-    // Utiliser la méthode recommandée par l'open data transport.opendata.ch :
-    // D'abord, récupérer l'id de la gare en effectuant une recherche par nom.
     const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
     try {
       const locResponse = await fetch(locURL);
@@ -270,7 +287,6 @@ document.addEventListener("DOMContentLoaded", function () {
       const station = locData.stations && locData.stations[0];
       if (!station) return null;
       const stationId = station.id;
-      // Utiliser l'id de la gare pour récupérer les prochains départs
       const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}&limit=${settings.adjustLookupLimit}`;
       const response = await fetch(API_URL);
       const data = await response.json();
@@ -298,9 +314,10 @@ document.addEventListener("DOMContentLoaded", function () {
       const data = await response.json();
       const departures = data.stationboard;
       const now = new Date();
+      const maxMin = maxDisplayMinutes();
       return departures.some(dep => {
         const depTime = new Date(dep.stop.departure);
-        return (depTime - now) / 60000 <= settings.maxDisplayMinutes;
+        return ((depTime - now) / 60000) <= maxMin;
       });
     } catch (error) {
       console.error("Erreur lors de la vérification des départs pour", stopNameCandidate, error);
@@ -328,7 +345,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // --- Le reste du code reste inchangé ---
+  // --- Le reste du code ---
   const departuresContainer = document.getElementById("departures");
   const lastUpdateElement = document.getElementById("update-time");
   const filterBox = document.getElementById("line-filter-box");
@@ -351,7 +368,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Nouvelle fonctionnalité : quitter le mode fullscreen si l'utilisateur clique en dehors du champ de recherche
+  // Quitter le fullscreen si clic en dehors du champ de recherche
   document.addEventListener("click", function(e) {
     if (document.fullscreenElement && !e.target.closest("#stop-name")) {
       document.exitFullscreen();
@@ -374,64 +391,60 @@ document.addEventListener("DOMContentLoaded", function () {
       const response = await fetch(API_URL);
       const data = await response.json();
       let departures = data.stationboard;
-      // Modification A: Ajustement des destinations pour les trains hors de Suisse
+
+      // Ajustement des destinations pour les trains hors de Suisse
       await Promise.all(departures.map(async (dep) => {
         if (dep.category === "T" && dep.to && dep.to.indexOf(",") === -1 && !isSwissStation(dep.to)) {
           const adjusted = await adjustTrainDestination(dep);
-          if (adjusted) {
-            dep.to = adjusted;
-          }
+          if (adjusted) dep.to = adjusted;
         }
       }));
+
       departuresContainer.innerHTML = "";
       const lines = [...new Set(departures.map(dep => {
-        // Modification B: Masquer valeur "null"
         const cat = (dep.category === "null" ? "" : dep.category);
         const num = (dep.number === "null" ? "" : dep.number);
         return cat + ' ' + num;
       }))];
+
       lines.sort((a, b) => {
         const numA = a.split(" ").pop();
         const numB = b.split(" ").pop();
         const isNumA = !isNaN(numA);
         const isNumB = !isNaN(numB);
-        if (isNumA && isNumB) {
-          return parseInt(numA) - parseInt(numB);
-        } else if (isNumA) {
-          return -1;
-        } else if (isNumB) {
-          return 1;
-        } else {
-          return numA.localeCompare(numB);
-        }
+        if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
+        if (isNumA) return -1;
+        if (isNumB) return 1;
+        return numA.localeCompare(numB);
       });
+
       if (selectedLines.size === 0) {
         lines.forEach(line => selectedLines.add(line));
       }
+
       filterBox.innerHTML = `
 <div id="select-all-container">
-<button id="select-all">Sélectionner tout</button>
-<button id="deselect-all">Désélectionner tout</button>
+  <button id="select-all">Sélectionner tout</button>
+  <button id="deselect-all">Désélectionner tout</button>
 </div>
 <div id="checkboxes-container">
-${lines.map(line => {
-  const checked = selectedLines.has(line) ? "checked" : "";
-  return `<label class="filter-item">
-<input type="checkbox" value="${line}" ${checked} class="line-checkbox"> Ligne ${line}
-</label>`;
-}).join('')}
+  ${lines.map(line => {
+    const checked = selectedLines.has(line) ? "checked" : "";
+    return `<label class="filter-item">
+      <input type="checkbox" value="${line}" ${checked} class="line-checkbox"> Ligne ${line}
+    </label>`;
+  }).join('')}
 </div>
 `;
+
       document.querySelectorAll(".line-checkbox").forEach(checkbox => {
         checkbox.addEventListener("change", () => {
-          if (checkbox.checked) {
-            selectedLines.add(checkbox.value);
-          } else {
-            selectedLines.delete(checkbox.value);
-          }
+          if (checkbox.checked) selectedLines.add(checkbox.value);
+          else selectedLines.delete(checkbox.value);
           renderDepartures(departures);
         });
       });
+
       const selectAllBtn = document.getElementById("select-all");
       const deselectAllBtn = document.getElementById("deselect-all");
       selectAllBtn.addEventListener("click", () => {
@@ -444,6 +457,7 @@ ${lines.map(line => {
         document.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
         renderDepartures(departures);
       });
+
       renderDepartures(departures);
       updateLastUpdateTime();
     } catch (error) {
@@ -454,21 +468,25 @@ ${lines.map(line => {
 
   function renderDepartures(departures) {
     departuresContainer.innerHTML = "";
-    // Regrouper les départs en incluant plateforme et ponctualité
     const filteredDepartures = departures.filter(dep =>
       selectedLines.has((dep.category === "null" ? "" : dep.category) + ' ' + (dep.number === "null" ? "" : dep.number))
     );
+
     const groupedByLine = {};
     const now = new Date();
+    const maxMin = maxDisplayMinutes();
+
     filteredDepartures.forEach(dep => {
       const key = `${dep.category === "null" ? "" : dep.category} ${dep.number === "null" ? "" : dep.number}`;
       if (!groupedByLine[key]) groupedByLine[key] = {};
       if (!groupedByLine[key][dep.to]) groupedByLine[key][dep.to] = [];
+
       const depTime = new Date(dep.stop.departure);
       const baseMinutesLeft = Math.round((depTime - now) / 60000);
       const delayMinutes = (dep.stop.delay !== undefined && dep.stop.delay !== null) ? dep.stop.delay : 0;
       const minutesLeftAdjusted = Math.max(0, baseMinutesLeft + delayMinutes);
-      if (minutesLeftAdjusted <= settings.maxDisplayMinutes) {
+
+      if (minutesLeftAdjusted <= maxMin) {
         groupedByLine[key][dep.to].push({
           time: depTime.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
           minutesLeft: minutesLeftAdjusted,
@@ -477,26 +495,24 @@ ${lines.map(line => {
         });
       }
     });
+
     const sortedLines = Object.entries(groupedByLine).sort(([a], [b]) => {
       const numA = a.split(" ").pop();
       const numB = b.split(" ").pop();
       const isNumA = !isNaN(numA);
       const isNumB = !isNaN(numB);
-      if (isNumA && isNumB) {
-        return parseInt(numA) - parseInt(numB);
-      } else if (isNumA) {
-        return -1;
-      } else if (isNumB) {
-        return 1;
-      } else {
-        return numA.localeCompare(numB);
-      }
+      if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
+      if (isNumA) return -1;
+      if (isNumB) return 1;
+      return numA.localeCompare(numB);
     });
+
     for (const [line, destinations] of sortedLines) {
       let [category, ...numParts] = line.split(" ");
-      if(category === "null") category = "";
+      if (category === "null") category = "";
       let number = numParts.join(" ").trim();
-      if(number === "null") number = "";
+      if (number === "null") number = "";
+
       let content = "";
       let lineColor = "";
       if (category === "B" || category === "T" || category === "M") {
@@ -514,21 +530,23 @@ ${lines.map(line => {
           lineColor = "#eb0000";
         }
       }
+
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       ctx.font = window.getComputedStyle(document.body).font;
       const textWidth = ctx.measureText(content).width;
       let extraPadding = 0;
-      if (textWidth < 21.5) {
-        extraPadding = (21.5 - textWidth) / 2;
-      }
+      if (textWidth < 21.5) extraPadding = (21.5 - textWidth) / 2;
       const horizontalPadding = 11 + extraPadding;
+
       const lineBadgeHTML = `<span class="line-badge" style="background-color:${lineColor};color:white;padding:5px ${horizontalPadding}px;border-radius:15px;">${content}</span>`;
       const lineTitleHTML = `<div class="line-title">${lineBadgeHTML}</div>`;
       const lineCard = document.createElement("div");
       lineCard.classList.add("line-card");
       lineCard.innerHTML = lineTitleHTML;
+
       let hasDepartureForLine = false;
+
       for (const [destination, times] of Object.entries(destinations)) {
         if (times.length > 0) {
           hasDepartureForLine = true;
@@ -542,26 +560,22 @@ ${lines.map(line => {
             if (depObj.delay !== null && (depObj.delay <= -2 || depObj.delay >= 2)) {
               const delayValue = Math.abs(depObj.delay);
               const sign = depObj.delay >= 0 ? "+" : "-";
-              if (delayValue >= 5) {
-                delayStr = ` <span style="color:#eb0000;">${sign}${delayValue}'</span>`;
-              } else {
-                delayStr = ` ${sign}${delayValue}'`;
-              }
+              if (delayValue >= 5) delayStr = ` <span style="color:#eb0000;">${sign}${delayValue}'</span>`;
+              else delayStr = ` ${sign}${delayValue}'`;
             }
-            let platformStr = "";
-            if (depObj.platform) {
-              platformStr = ` pl. ${depObj.platform}`;
-            }
+            let platformStr = depObj.platform ? ` pl. ${depObj.platform}` : "";
             return `<span class="departure-item">${depObj.time}${delayStr} (${depObj.minutesLeft} min)${platformStr}</span>`;
           }).join(" ") + `</div>`;
         }
       }
+
       if (hasDepartureForLine) {
         departuresContainer.appendChild(lineCard);
       }
     }
   }
 
+  // Premier chargement + rafraîchissement périodique paramétrable
   fetchDepartures();
-  setInterval(fetchDepartures, 60000);
+  setInterval(fetchDepartures, refreshIntervalMs());
 });
