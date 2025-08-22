@@ -20,6 +20,6 @@ export const settings = {
     // Taille du PRÉFIXE en % par rapport au texte normal (ex: 75 => 75%)
     sizeRatioPercent: 75,
     // Couleur du SUFFIXE : "default" (hérite/noir), ou "blue", "green", "#000000", etc.
-    color: "blue"
+    color: "#2d327d"
   }
 };
