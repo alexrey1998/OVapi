@@ -12,11 +12,14 @@ export const settings = {
   // Intervalle de rafraîchissement (hh:mm:ss)
   refreshInterval: "00:01:00",
 
-  // Apparence de la partie après la virgule (suffixe) des noms d’arrêts
+  // Apparence des noms d’arrêts avec virgule :
+  // - le PRÉFIXE (avant la virgule) est redimensionné
+  // - le SUFFIXE (à partir de la virgule) garde la taille normale mais peut changer de couleur
+  // - s’il n’y a PAS de virgule, on applique la couleur du suffixe à tout le nom (taille inchangée)
   stopSuffix: {
-    // Taille du suffixe en % par rapport au texte normal (ex: 75 => 75%)
+    // Taille du PRÉFIXE en % par rapport au texte normal (ex: 75 => 75%)
     sizeRatioPercent: 75,
-    // Couleur du suffixe : "default" (hérite/noir actuel), ou "blue", "green", "#000000", etc.
+    // Couleur du SUFFIXE : "default" (hérite/noir), ou "blue", "green", "#000000", etc.
     color: "blue"
   }
 };
