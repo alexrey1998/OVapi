@@ -84,6 +84,4 @@ export const lineColors = {
   "L": "#FF7E00",
   "M": "#00A828",
   "N": "#008CBE"
-  };
-
-  
+};

@@ -1,38 +1,47 @@
+// sw.js
 const CACHE_NAME = 'tp-live-cache-v1';
 const urlsToCache = [
-'./',
-'./index.html',
-'./style.css',
-'./script.js',
-'./manifest.json'
-// Ajoutez ici d'autres ressources à mettre en cache si nécessaire, comme les icônes.
+  './',
+  './index.html',
+  './style.css',
+  './script.js',
+  './settings.js',
+  './colors.js',
+  './swiss_stations.csv',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
   );
 });
 
 self.addEventListener('fetch', event => {
-  // Pour les requêtes de navigation et pour le fichier script.js, utiliser une stratégie réseau en priorité.
-  if (event.request.mode === 'navigate' || event.request.url.endsWith('script.js')) {
+  const url = new URL(event.request.url);
+
+  // Network-first pour navigation et scripts modules principaux
+  const isNav = event.request.mode === 'navigate';
+  const isCoreScript = url.pathname.endsWith('/script.js') ||
+                       url.pathname.endsWith('/settings.js') ||
+                       url.pathname.endsWith('/colors.js');
+
+  if (isNav || isCoreScript) {
     event.respondWith(
       fetch(event.request)
         .then(response => {
-          // Mettez à jour le cache avec la réponse fraîche
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
           return response;
         })
         .catch(() => caches.match(event.request))
     );
   } else {
-    // Pour les autres ressources, utiliser le cache si disponible
+    // Cache-first pour le reste
     event.respondWith(
-      caches.match(event.request)
-        .then(response => response || fetch(event.request))
+      caches.match(event.request).then(resp => resp || fetch(event.request))
     );
   }
 });

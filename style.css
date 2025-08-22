@@ -1,3 +1,4 @@
+/* style.css */
 /* Réinitialiser marges, padding et box-sizing */
 * {
   margin: 0;
@@ -34,7 +35,7 @@ body {
   bottom: 10px;
   background: transparent;
   border: none;
-  font-size: 30px; /* Augmenté de 1.5 fois (20px -> 30px) */
+  font-size: 30px;
   line-height: 30px;
   cursor: pointer;
   color: #ffffff;
@@ -63,7 +64,7 @@ h1 {
   background-color: #f0f0f0;
 }
 
-/* Nouvelle barre de contrôle pour aligner horizontalement la dernière mise à jour et les boutons */
+/* Nouvelle barre de contrôle */
 #control-bar {
   display: flex;
   align-items: center;
@@ -71,7 +72,7 @@ h1 {
   margin-bottom: 20px;
 }
 
-/* Ajustement de la marge pour le filtre lorsqu'il est dans la barre de contrôle */
+/* Ajustement de la marge pour le filtre */
 #control-bar .filter-container {
   margin-bottom: 0;
 }
@@ -82,7 +83,7 @@ h1 {
   margin-bottom: 0;
 }
 
-/* Boutons (actualisation & filtre) */
+/* Boutons (filtre) */
 #toggle-filter {
   padding: 10px 20px;
   font-size: 1rem;
@@ -105,9 +106,7 @@ h1 {
   padding: 10px;
   margin-top: 5px;
 }
-.hidden {
-  display: none;
-}
+.hidden { display: none; }
 
 /* Style des cases à cocher */
 .filter-item {
@@ -117,7 +116,7 @@ h1 {
   margin-bottom: 5px;
 }
 
-/* Conteneur des départs : affichage en grille responsive */
+/* Conteneur des départs : grille responsive */
 #departures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -129,13 +128,13 @@ h1 {
   background: white;
   padding: 15px;
   border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
   min-width: 250px;
-  position: static;     /* éviter tout chevauchement */
+  position: static;
   display: flex;
   flex-direction: column;
-  min-height: 0;        /* laisse le contenu décider */
-  break-inside: avoid;  /* si jamais un layout en colonnes est appliqué ailleurs */
+  min-height: 0;
+  break-inside: avoid;
 }
 
 /* Titre de la ligne */
@@ -173,7 +172,7 @@ body.fullscreen #fullscreen-toggle {
 }
 body.fullscreen {
   height: 100vh;
-  overflow: auto;               /* autorise le scroll */
+  overflow: auto;
   display: flex;
   flex-direction: column;
   -ms-overflow-style: none;     /* IE/Edge */
@@ -181,7 +180,7 @@ body.fullscreen {
 }
 body.fullscreen::-webkit-scrollbar { display: none; }
 
-body.fullscreen #departures{
+body.fullscreen #departures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   grid-auto-rows: auto;
@@ -193,15 +192,7 @@ body.fullscreen #departures{
   height: auto;
 }
 
-body.fullscreen .line-card {
-  min-height: 0;
-}
-
-body.fullscreen .line-title {
-  font-size: 1.2em;
-}
-
+body.fullscreen .line-card { min-height: 0; }
+body.fullscreen .line-title { font-size: 1.2em; }
 body.fullscreen .destination-title,
-body.fullscreen .departure-times {
-  font-size: 0.9em;
-}
+body.fullscreen .departure-times { font-size: 0.9em; }

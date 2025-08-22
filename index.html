@@ -14,27 +14,35 @@
 <body>
 <!-- Bannière d'information affichée lors de la première visite -->
 <div id="banner">
-<p class="banner-text">Aucune donnée n’est collectée côté serveur. Toutes les données techniquement nécessaires au fonctionnement de la WebApp sont stockées localement sur votre appareil et sont inaccessibles au développeur.</p>
-<p class="banner-text">Cliquez sur le nom de l'arrêt affiché en haut pour le modifier.</p>
-<button id="banner-close">×</button>
+  <p class="banner-text">Aucune donnée n’est collectée côté serveur. Toutes les données techniquement nécessaires au fonctionnement de la WebApp sont stockées localement sur votre appareil et sont inaccessibles au développeur.</p>
+  <p class="banner-text">Cliquez sur le nom de l'arrêt affiché en haut pour le modifier.</p>
+  <button id="banner-close">×</button>
 </div>
 
-<!-- Titre : le nom de l'arrêt est désormais injecté par le script et est éditable -->
+<!-- Titre : le nom de l'arrêt est injecté par le script et est éditable -->
 <h1 id="stop-name" contenteditable="true">Entrez le nom de l'arrêt ici</h1>
 <!-- Suggestions pour le nom de l'arrêt -->
 <div id="stop-suggestions"></div>
 
 <!-- Barre de contrôle regroupant la dernière mise à jour, le bouton plein écran et le filtre de lignes -->
 <div id="control-bar">
-<p id="last-update">Dernière mise à jour: <span id="update-time">-</span></p>
-<button id="fullscreen-toggle">Plein écran ↗️</button>
-<div class="filter-container">
-<button id="toggle-filter">Filtres de lignes ▼</button>
-<div id="line-filter-box" class="hidden"></div>
-</div>
+  <p id="last-update">Dernière mise à jour: <span id="update-time">-</span></p>
+  <button id="fullscreen-toggle">Plein écran ↗️</button>
+  <div class="filter-container">
+    <button id="toggle-filter">Filtres de lignes ▼</button>
+    <div id="line-filter-box" class="hidden"></div>
+  </div>
 </div>
 
 <!-- Conteneur des départs -->
 <div id="departures"></div>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(console.error);
+    });
+  }
+</script>
 </body>
 </html>
