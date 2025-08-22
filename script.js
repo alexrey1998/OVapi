@@ -28,25 +28,29 @@ function escapeHTML(s) {
 
 /**
  * Formate un nom d’arrêt :
- * - si contient une virgule, la partie après la virgule (incluse) est affichée
- *   avec un ratio de taille et une couleur configurables.
+ * - si contient une virgule : le PRÉFIXE (avant la virgule) est réduit (ratio), le SUFFIXE (à partir de la virgule) garde la taille normale et prend la couleur configurée.
+ * - si ne contient PAS de virgule : appliquer la couleur du suffixe à tout le nom (taille inchangée).
  */
 function formatStopNameHTML(name) {
   const str = String(name ?? "");
   const idx = str.indexOf(",");
-  if (idx === -1) return escapeHTML(str);
-
-  const main = str.slice(0, idx);          // avant la virgule
-  const suffix = str.slice(idx);           // virgule + après
-
   const ratio = Number(settings?.stopSuffix?.sizeRatioPercent) || 100;
   const colorRaw = (settings?.stopSuffix?.color ?? "default").trim();
   const colorCSS = (colorRaw.toLowerCase() === "default") ? "inherit" : colorRaw;
 
+  if (idx === -1) {
+    // Pas de virgule : on applique seulement la couleur (taille inchangée)
+    const colorStyle = colorCSS === "inherit" ? "" : `color:${escapeHTML(colorCSS)};`;
+    return `<span class="stop-solo" style="${colorStyle}">${escapeHTML(str)}</span>`;
+  }
+
+  const prefix = str.slice(0, idx);   // avant la virgule
+  const suffix = str.slice(idx);      // virgule + après
   const sizeCSS = `${ratio}%`;
   const colorStyle = colorCSS === "inherit" ? "" : `color:${escapeHTML(colorCSS)};`;
 
-  return `${escapeHTML(main)}<span class="stop-suffix" style="font-size:${sizeCSS};${colorStyle}">${escapeHTML(suffix)}</span>`;
+  return `<span class="stop-prefix" style="font-size:${sizeCSS};">${escapeHTML(prefix)}</span>` +
+         `<span class="stop-suffix" style="${colorStyle}">${escapeHTML(suffix)}</span>`;
 }
 
 // Chargement du fichier CSV des gares suisses
@@ -93,7 +97,6 @@ document.addEventListener("DOMContentLoaded", function () {
   const suggestionsContainer = document.getElementById("stop-suggestions");
 
   function renderStopNameToTitle() {
-    // stylise uniquement l’affichage (le texte brut reste accessible via textContent)
     stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
   }
   renderStopNameToTitle();
