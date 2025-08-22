@@ -28,24 +28,30 @@ function escapeHTML(s) {
 
 /**
  * Formate un nom d’arrêt :
- * - si contient une virgule : le PRÉFIXE (avant la virgule) est réduit (ratio), le SUFFIXE (à partir de la virgule) garde la taille normale et prend la couleur configurée.
+ * - si contient une virgule : le PRÉFIXE (incluant la virgule ET l’espace qui suit) est réduit (ratio),
+ *   le SUFFIXE (après la virgule + espace) garde la taille normale et prend la couleur configurée.
  * - si ne contient PAS de virgule : appliquer la couleur du suffixe à tout le nom (taille inchangée).
  */
 function formatStopNameHTML(name) {
   const str = String(name ?? "");
-  const idx = str.indexOf(",");
+  const commaIdx = str.indexOf(",");
   const ratio = Number(settings?.stopSuffix?.sizeRatioPercent) || 100;
   const colorRaw = (settings?.stopSuffix?.color ?? "default").trim();
   const colorCSS = (colorRaw.toLowerCase() === "default") ? "inherit" : colorRaw;
 
-  if (idx === -1) {
-    // Pas de virgule : on applique seulement la couleur (taille inchangée)
+  if (commaIdx === -1) {
+    // Pas de virgule : couleur appliquée à tout le nom (taille inchangée)
     const colorStyle = colorCSS === "inherit" ? "" : `color:${escapeHTML(colorCSS)};`;
     return `<span class="stop-solo" style="${colorStyle}">${escapeHTML(str)}</span>`;
   }
 
-  const prefix = str.slice(0, idx);   // avant la virgule
-  const suffix = str.slice(idx);      // virgule + après
+  // Inclure la virgule + l’éventuel espace dans le PRÉFIXE
+  let splitIdx = commaIdx + 1;
+  if (str[splitIdx] === " ") splitIdx += 1;
+
+  const prefix = str.slice(0, splitIdx); // ex: "Genève, "
+  const suffix = str.slice(splitIdx);    // ex: "Trembley"
+
   const sizeCSS = `${ratio}%`;
   const colorStyle = colorCSS === "inherit" ? "" : `color:${escapeHTML(colorCSS)};`;
 
