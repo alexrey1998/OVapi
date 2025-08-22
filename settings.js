@@ -17,6 +17,6 @@ export const settings = {
     // Taille du suffixe en % par rapport au texte normal (ex: 75 => 75%)
     sizeRatioPercent: 75,
     // Couleur du suffixe : "default" (hérite/noir actuel), ou "blue", "green", "#000000", etc.
-    color: "default"
+    color: "blue"
   }
 };
