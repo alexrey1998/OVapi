@@ -189,4 +189,15 @@
   body.fullscreen .departure-times {
   font-size: 0.9em;
   }
-  
+
+/* ===== AJOUTS pour le scroll en plein écran, barres cachées ===== */
+body.fullscreen.fs-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -ms-overflow-style: none;          /* IE/Edge */
+  scrollbar-width: none;             /* Firefox */
+  -webkit-overflow-scrolling: touch; /* iOS inertial scroll */
+}
+body.fullscreen.fs-scroll::-webkit-scrollbar {
+  display: none;                     /* Chrome/Safari/Edge */
+}
