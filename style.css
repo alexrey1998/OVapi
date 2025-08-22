@@ -3,32 +3,32 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  }
-  
-  /* Fond clair et police lisible */
-  body {
+}
+
+/* Fond clair et police lisible */
+body {
   font-family: Arial, sans-serif;
   background-color: #f4f4f4;
   color: #333;
   line-height: 1.6;
   padding: 20px;
-  }
-  
-  /* Bannière d'information en haut de la page */
-  #banner {
+}
+
+/* Bannière d'information en haut de la page */
+#banner {
   background-color: #eb0000;
   color: #ffffff; /* Texte en blanc */
   padding: 10px;
   text-align: center;
   position: relative;
   border-bottom: 1px solid #ccc;
-  }
-  
-  #banner p {
+}
+
+#banner p {
   margin: 0;
-  }
-  
-  #banner button {
+}
+
+#banner button {
   position: absolute;
   right: 10px;
   bottom: 10px;
@@ -38,52 +38,52 @@
   line-height: 30px;
   cursor: pointer;
   color: #ffffff;
-  }
-  
-  /* Titre */
-  h1 {
+}
+
+/* Titre */
+h1 {
   font-size: 1.8rem;
   margin-bottom: 20px;
-  }
-  
-  /* Suggestions pour le nom de l'arrêt */
-  #stop-suggestions {
+}
+
+/* Suggestions pour le nom de l'arrêt */
+#stop-suggestions {
   border: 1px solid #ccc;
   background: #fff;
   margin-bottom: 20px;
   display: none;
   max-width: 100%;
-  }
-  #stop-suggestions div {
+}
+#stop-suggestions div {
   padding: 5px;
   cursor: pointer;
-  }
-  #stop-suggestions div:hover,
-  #stop-suggestions div.selected {
+}
+#stop-suggestions div:hover,
+#stop-suggestions div.selected {
   background-color: #f0f0f0;
-  }
-  
-  /* Nouvelle barre de contrôle pour aligner horizontalement la dernière mise à jour et les boutons */
-  #control-bar {
+}
+
+/* Nouvelle barre de contrôle pour aligner horizontalement la dernière mise à jour et les boutons */
+#control-bar {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 20px;
-  }
-  
-  /* Ajustement de la marge pour le filtre lorsqu'il est dans la barre de contrôle */
-  #control-bar .filter-container {
+}
+
+/* Ajustement de la marge pour le filtre lorsqu'il est dans la barre de contrôle */
+#control-bar .filter-container {
   margin-bottom: 0;
-  }
-  
-  /* Dernière mise à jour */
-  #last-update {
+}
+
+/* Dernière mise à jour */
+#last-update {
   font-size: 1rem;
   margin-bottom: 0;
-  }
-  
-  /* Boutons (actualisation & filtre) */
-  #toggle-filter {
+}
+
+/* Boutons (actualisation & filtre) */
+#toggle-filter {
   padding: 10px 20px;
   font-size: 1rem;
   background-color: #007bff;
@@ -92,112 +92,107 @@
   border-radius: 5px;
   cursor: pointer;
   margin-bottom: 10px;
-  }
-  #toggle-filter:hover {
+}
+#toggle-filter:hover {
   background-color: #0056b3;
-  }
-  
-  /* Boîte des filtres */
-  #line-filter-box {
+}
+
+/* Boîte des filtres */
+#line-filter-box {
   background: white;
   border: 1px solid #ddd;
   border-radius: 5px;
   padding: 10px;
   margin-top: 5px;
-  }
-  .hidden {
+}
+.hidden {
   display: none;
-  }
-  
-  /* Style des cases à cocher */
-  .filter-item {
+}
+
+/* Style des cases à cocher */
+.filter-item {
   display: flex;
   align-items: center;
   gap: 5px;
   margin-bottom: 5px;
-  }
-  
-  /* Conteneur des départs : affichage en grille responsive */
-  #departures {
+}
+
+/* Conteneur des départs : affichage en grille responsive */
+#departures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 12px;
-  }
-  
-  /* Carte par ligne */
-  .line-card {
+}
+
+/* Carte par ligne */
+.line-card {
   background: white;
   padding: 15px;
   border-radius: 8px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
   min-width: 250px;
-  }
-  
-  /* Titre de la ligne */
-  .line-title {
+  /* Adaptation en hauteur */
+  height: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Titre de la ligne */
+.line-title {
   font-size: 1.5rem;
   font-weight: bold;
   color: #007bff;
   margin-bottom: 10px;
-  }
-  
-  /* Destination */
-  .destination-title {
+}
+
+/* Destination */
+.destination-title {
   font-size: 1.2rem;
   font-weight: bold;
   margin-top: 10px;
-  }
-  
-  /* Liste des départs */
-  .departure-times {
+  /* Meilleure tenue en multi-lignes */
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  }
-  .departure-item {
+  align-items: baseline;
+}
+
+/* Liste des départs */
+.departure-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;             /* un peu plus d'air */
+  align-items: flex-start;/* éviter l'écrasement vertical */
+}
+.departure-item {
   background: #eee;
   padding: 5px 10px;
   border-radius: 5px;
   font-size: 1rem;
-  }
-  
-  body.fullscreen #toggle-filter,
-  body.fullscreen #fullscreen-toggle {
+}
+
+body.fullscreen #toggle-filter,
+body.fullscreen #fullscreen-toggle {
   display: none; /* Cache les boutons en plein écran */
-  }
-  body.fullscreen {
+}
+body.fullscreen {
   height: 100vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  }
-  body.fullscreen #departures {
-  flex-grow: 1;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  align-content: start;
-  gap: 12px;
-  height: 100%;
-  }
-  body.fullscreen .line-card {
-  min-height: 100px;
-  box-sizing: border-box;
-  }
-  body.fullscreen .line-title {
-  font-size: 1.2em;
-  }
-  body.fullscreen .destination-title,
-  body.fullscreen .departure-times {
-  font-size: 0.9em;
-  }
-
-/* ===== AJOUTS pour le scroll en plein écran, barres cachées ===== */
-body.fullscreen.fs-scroll {
-  overflow-y: auto;
-  overflow-x: hidden;
-  -ms-overflow-style: none;          /* IE/Edge */
-  scrollbar-width: none;             /* Firefox */
-  -webkit-overflow-scrolling: touch; /* iOS inertial scroll */
 }
-body.fullscreen.fs-scroll::-webkit-scrollbar {
-  display: none;                     /* Chrome/Safari/Edge */
+body.fullscreen #departures {
+  flex-grow: 1;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); /* pas de largeur mini de colonne */
+  align-content: start;
+  gap: 16px;
+  height: 100%;
+  padding: 8px;
+}
+/* supprimé: body.fullscreen .line-card { min-height: 100px; } */
+body.fullscreen .line-title {
+  font-size: 1.2em;
+}
+body.fullscreen .destination-title,
+body.fullscreen .departure-times {
+  font-size: 0.9em;
 }
