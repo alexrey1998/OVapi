@@ -1,5 +1,30 @@
 import { lineColors } from "./colors.js";
 
+// Chargement du fichier CSV des gares suisses
+let swissStationsSet = new Set();
+loadSwissStations();
+
+function loadSwissStations() {
+  fetch("swiss_stations.csv")
+    .then(response => response.text())
+    .then(text => {
+      const lines = text.split("\n");
+      for (let line of lines) {
+        line = line.trim();
+        if (line && line.toLowerCase() !== "name") {
+          swissStationsSet.add(line);
+        }
+      }
+    })
+    .catch(error => {
+      console.error("Erreur de chargement du CSV des gares suisses", error);
+    });
+}
+
+function isSwissStation(stationName) {
+  return swissStationsSet.has(stationName);
+}
+
 document.addEventListener("DOMContentLoaded", function () {
   // Gestion de la bannière d'information
   if (localStorage.getItem("bannerClosed") === "true") {
@@ -15,29 +40,29 @@ document.addEventListener("DOMContentLoaded", function () {
       localStorage.setItem("bannerClosed", "true");
     });
   }
-  
+
   let STOP_NAME = "Entrez le nom de l'arrêt ici";
   const stopNameEl = document.getElementById("stop-name");
   const suggestionsContainer = document.getElementById("stop-suggestions");
   stopNameEl.textContent = STOP_NAME;
-  
+
   // Variable pour suivre l'indice de suggestion actuellement sélectionnée
   let currentSuggestionIndex = -1;
   // Variable pour stocker la position de l'utilisateur
   let userLocation = null;
-  
+
   // Fonction de calcul de la distance (formule de Haversine) entre deux points (en km)
   function computeDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // Rayon de la Terre en km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
-  
+
   // Fonction pour mettre à jour la mise en surbrillance des suggestions
   function updateSuggestionHighlight() {
     const suggestionItems = suggestionsContainer.querySelectorAll("div");
@@ -49,7 +74,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
   }
-  
+
   // Lors d'un clic sur le h1, vider le contenu, actualiser la localisation et afficher les suggestions
   stopNameEl.addEventListener("click", function() {
     if (this.textContent.trim() !== "") {
@@ -62,7 +87,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     this.focus();
   });
-  
+
   // Lors d'une saisie, récupérer les suggestions via une requête texte
   stopNameEl.addEventListener("input", function() {
     currentSuggestionIndex = -1;
@@ -78,7 +103,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
   });
-  
+
   // Gestion des flèches haut/bas et de la touche Entrée
   stopNameEl.addEventListener("keydown", function(e) {
     const suggestionItems = suggestionsContainer.querySelectorAll("div");
@@ -115,7 +140,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
   });
-  
+
   // Au blur, vider les suggestions et lancer la recherche
   stopNameEl.addEventListener("blur", function() {
     setTimeout(() => {
@@ -127,7 +152,7 @@ document.addEventListener("DOMContentLoaded", function () {
     selectedLines.clear();
     fetchDepartures();
   });
-  
+
   // Fonction pour actualiser la localisation (au chargement et lors du clic)
   function updateUserLocation(callback) {
     if (navigator.geolocation) {
@@ -146,7 +171,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (callback) callback();
     }
   }
-  
+
   // Fonction pour récupérer les suggestions basées sur la localisation
   function fetchSuggestionsByLocation(lon, lat, callback) {
     const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
@@ -192,7 +217,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       });
   }
-  
+
   // Fonction pour récupérer les suggestions par saisie texte (filtrées selon la propriété type)
   function fetchSuggestions(query) {
     const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}`;
@@ -232,7 +257,38 @@ document.addEventListener("DOMContentLoaded", function () {
         console.error("Erreur lors de la récupération des suggestions", error);
       });
   }
-  
+
+  // Modification A : Fonction pour ajuster la destination des trains hors de Suisse
+  async function adjustTrainDestination(dep) {
+    // Utiliser la méthode recommandée par l'open data transport.opendata.ch :
+    // D'abord, récupérer l'id de la gare en effectuant une recherche par nom.
+    const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
+    try {
+      const locResponse = await fetch(locURL);
+      const locData = await locResponse.json();
+      const station = locData.stations && locData.stations[0];
+      if (!station) return null;
+      const stationId = station.id;
+      // Utiliser l'id de la gare pour récupérer les prochains départs
+      const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}&limit=5`;
+      const response = await fetch(API_URL);
+      const data = await response.json();
+      const departures = data.stationboard;
+      const currentName = parseInt(dep.name);
+      for (let otherDep of departures) {
+        const otherName = parseInt(otherDep.name);
+        if (otherName === currentName || otherName === currentName + 1) {
+          if (otherDep.to && otherDep.to !== dep.to && !isSwissStation(otherDep.to)) {
+            return otherDep.to;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'ajustement de la destination pour", dep.to, error);
+    }
+    return null;
+  }
+
   // Nouvelle fonction pour vérifier si un arrêt possède au moins un départ dans les 90 prochaines minutes
   async function checkDeparturesForStop(stopNameCandidate) {
     const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopNameCandidate)}&limit=30`;
@@ -250,7 +306,7 @@ document.addEventListener("DOMContentLoaded", function () {
       return false;
     }
   }
-  
+
   // Nouveau code adapté pour mettre à jour STOP_NAME avec l'arrêt le plus proche ayant des départs à afficher
   if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
     updateUserLocation(function() {
@@ -270,19 +326,19 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
   }
-  
+
   // --- Le reste du code reste inchangé ---
   const departuresContainer = document.getElementById("departures");
   const lastUpdateElement = document.getElementById("update-time");
   const filterBox = document.getElementById("line-filter-box");
   const toggleFilterBtn = document.getElementById("toggle-filter");
-  
+
   let selectedLines = new Set();
-  
+
   toggleFilterBtn.addEventListener("click", () => {
     filterBox.classList.toggle("hidden");
   });
-  
+
   const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
   fullscreenToggleBtn.addEventListener("click", () => {
     if (!document.fullscreenElement) {
@@ -293,7 +349,7 @@ document.addEventListener("DOMContentLoaded", function () {
       document.body.classList.remove("fullscreen");
     }
   });
-  
+
   // Nouvelle fonctionnalité : quitter le mode fullscreen si l'utilisateur clique en dehors du champ de recherche
   document.addEventListener("click", function(e) {
     if (document.fullscreenElement && !e.target.closest("#stop-name")) {
@@ -301,7 +357,7 @@ document.addEventListener("DOMContentLoaded", function () {
       document.body.classList.remove("fullscreen");
     }
   });
-  
+
   function updateLastUpdateTime() {
     const now = new Date();
     lastUpdateElement.textContent = now.toLocaleTimeString("fr-FR", {
@@ -310,92 +366,100 @@ document.addEventListener("DOMContentLoaded", function () {
       second: "2-digit"
     });
   }
-  
-  function fetchDepartures() {
+
+  async function fetchDepartures() {
     const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${STOP_NAME}&limit=30`;
-    fetch(API_URL)
-      .then(response => response.json())
-      .then(data => {
-        departuresContainer.innerHTML = "";
-        const departures = data.stationboard;
-  
-        const lines = [...new Set(departures.map(dep => dep.category + ' ' + dep.number))];
-        lines.sort((a, b) => {
-          const numA = a.split(" ").pop();
-          const numB = b.split(" ").pop();
-          const isNumA = !isNaN(numA);
-          const isNumB = !isNaN(numB);
-          if (isNumA && isNumB) {
-            return parseInt(numA) - parseInt(numB);
-          } else if (isNumA) {
-            return -1;
-          } else if (isNumB) {
-            return 1;
-          } else {
-            return numA.localeCompare(numB);
+    try {
+      const response = await fetch(API_URL);
+      const data = await response.json();
+      let departures = data.stationboard;
+      // Modification A: Ajustement des destinations pour les trains hors de Suisse
+      await Promise.all(departures.map(async (dep) => {
+        if (dep.category === "T" && dep.to && dep.to.indexOf(",") === -1 && !isSwissStation(dep.to)) {
+          const adjusted = await adjustTrainDestination(dep);
+          if (adjusted) {
+            dep.to = adjusted;
           }
-        });
-  
-        if (selectedLines.size === 0) {
-          lines.forEach(line => selectedLines.add(line));
         }
-  
-        filterBox.innerHTML = `
-          <div id="select-all-container">
-            <button id="select-all">Sélectionner tout</button>
-            <button id="deselect-all">Désélectionner tout</button>
-          </div>
-          <div id="checkboxes-container">
-            ${lines.map(line => {
-              const checked = selectedLines.has(line) ? "checked" : "";
-              return `<label class="filter-item">
-                        <input type="checkbox" value="${line}" ${checked} class="line-checkbox"> Ligne ${line}
-                      </label>`;
-            }).join('')}
-          </div>
-        `;
-  
-        document.querySelectorAll(".line-checkbox").forEach(checkbox => {
-          checkbox.addEventListener("change", () => {
-            if (checkbox.checked) {
-              selectedLines.add(checkbox.value);
-            } else {
-              selectedLines.delete(checkbox.value);
-            }
-            renderDepartures(departures);
-          });
-        });
-  
-        const selectAllBtn = document.getElementById("select-all");
-        const deselectAllBtn = document.getElementById("deselect-all");
-        selectAllBtn.addEventListener("click", () => {
-          lines.forEach(line => selectedLines.add(line));
-          document.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
-          renderDepartures(departures);
-        });
-        deselectAllBtn.addEventListener("click", () => {
-          selectedLines.clear();
-          document.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
-          renderDepartures(departures);
-        });
-  
-        renderDepartures(departures);
-        updateLastUpdateTime();
-      })
-      .catch(error => {
-        console.error("Erreur lors de la récupération des données", error);
-        departuresContainer.innerHTML = "<p>Erreur de chargement</p>";
+      }));
+      departuresContainer.innerHTML = "";
+      const lines = [...new Set(departures.map(dep => {
+        // Modification B: Masquer valeur "null"
+        const cat = (dep.category === "null" ? "" : dep.category);
+        const num = (dep.number === "null" ? "" : dep.number);
+        return cat + ' ' + num;
+      }))];
+      lines.sort((a, b) => {
+        const numA = a.split(" ").pop();
+        const numB = b.split(" ").pop();
+        const isNumA = !isNaN(numA);
+        const isNumB = !isNaN(numB);
+        if (isNumA && isNumB) {
+          return parseInt(numA) - parseInt(numB);
+        } else if (isNumA) {
+          return -1;
+        } else if (isNumB) {
+          return 1;
+        } else {
+          return numA.localeCompare(numB);
+        }
       });
+      if (selectedLines.size === 0) {
+        lines.forEach(line => selectedLines.add(line));
+      }
+      filterBox.innerHTML = `
+<div id="select-all-container">
+<button id="select-all">Sélectionner tout</button>
+<button id="deselect-all">Désélectionner tout</button>
+</div>
+<div id="checkboxes-container">
+${lines.map(line => {
+  const checked = selectedLines.has(line) ? "checked" : "";
+  return `<label class="filter-item">
+<input type="checkbox" value="${line}" ${checked} class="line-checkbox"> Ligne ${line}
+</label>`;
+}).join('')}
+</div>
+`;
+      document.querySelectorAll(".line-checkbox").forEach(checkbox => {
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) {
+            selectedLines.add(checkbox.value);
+          } else {
+            selectedLines.delete(checkbox.value);
+          }
+          renderDepartures(departures);
+        });
+      });
+      const selectAllBtn = document.getElementById("select-all");
+      const deselectAllBtn = document.getElementById("deselect-all");
+      selectAllBtn.addEventListener("click", () => {
+        lines.forEach(line => selectedLines.add(line));
+        document.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
+        renderDepartures(departures);
+      });
+      deselectAllBtn.addEventListener("click", () => {
+        selectedLines.clear();
+        document.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
+        renderDepartures(departures);
+      });
+      renderDepartures(departures);
+      updateLastUpdateTime();
+    } catch (error) {
+      console.error("Erreur lors de la récupération des données", error);
+      departuresContainer.innerHTML = "<p>Erreur de chargement</p>";
+    }
   }
-  
+
   function renderDepartures(departures) {
     departuresContainer.innerHTML = "";
+    // Regrouper les départs en incluant plateforme et ponctualité
     const filteredDepartures = departures.filter(dep =>
-      selectedLines.has(dep.category + ' ' + dep.number)
+      selectedLines.has((dep.category === "null" ? "" : dep.category) + ' ' + (dep.number === "null" ? "" : dep.number))
     );
     const groupedByLine = {};
     filteredDepartures.forEach(dep => {
-      const key = `${dep.category} ${dep.number}`;
+      const key = `${dep.category === "null" ? "" : dep.category} ${dep.number === "null" ? "" : dep.number}`;
       if (!groupedByLine[key]) groupedByLine[key] = {};
       if (!groupedByLine[key][dep.to]) groupedByLine[key][dep.to] = [];
       const depTime = new Date(dep.stop.departure);
@@ -403,7 +467,9 @@ document.addEventListener("DOMContentLoaded", function () {
       if (minutesLeft <= 90) {
         groupedByLine[key][dep.to].push({
           time: depTime.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-          minutesLeft
+          minutesLeft,
+          platform: (dep.stop.platform && dep.category !== "GB" && dep.stop.platform !== "null") ? dep.stop.platform : "",
+          delay: (dep.stop.delay !== undefined && dep.stop.delay !== null) ? dep.stop.delay : null
         });
       }
     });
@@ -422,12 +488,11 @@ document.addEventListener("DOMContentLoaded", function () {
         return numA.localeCompare(numB);
       }
     });
-  
     for (const [line, destinations] of sortedLines) {
-      const parts = line.split(" ");
-      const category = parts[0];
-      const number = parts.slice(1).join(" ").trim();
-      
+      let [category, ...numParts] = line.split(" ");
+      if(category === "null") category = "";
+      let number = numParts.join(" ").trim();
+      if(number === "null") number = "";
       let content = "";
       let lineColor = "";
       if (category === "B" || category === "T" || category === "M") {
@@ -445,7 +510,6 @@ document.addEventListener("DOMContentLoaded", function () {
           lineColor = "#eb0000";
         }
       }
-      
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       ctx.font = window.getComputedStyle(document.body).font;
@@ -455,12 +519,11 @@ document.addEventListener("DOMContentLoaded", function () {
         extraPadding = (21.5 - textWidth) / 2;
       }
       const horizontalPadding = 11 + extraPadding;
-      const lineBadgeHTML = `<span class="line-badge" style="background-color: ${lineColor}; color: white; padding: 5px ${horizontalPadding}px; border-radius: 15px;">${content}</span>`;
+      const lineBadgeHTML = `<span class="line-badge" style="background-color:${lineColor};color:white;padding:5px ${horizontalPadding}px;border-radius:15px;">${content}</span>`;
       const lineTitleHTML = `<div class="line-title">${lineBadgeHTML}</div>`;
       const lineCard = document.createElement("div");
       lineCard.classList.add("line-card");
       lineCard.innerHTML = lineTitleHTML;
-      
       let hasDepartureForLine = false;
       for (const [destination, times] of Object.entries(destinations)) {
         if (times.length > 0) {
@@ -470,7 +533,23 @@ document.addEventListener("DOMContentLoaded", function () {
             displayDestination += " ✈";
           }
           lineCard.innerHTML += `<div class="destination-title">${displayDestination}</div>`;
-          lineCard.innerHTML += `<div class="departure-times">${times.slice(0, 5).map(dep => `<span class="departure-item">${dep.time} (${dep.minutesLeft} min)</span>`).join(" ")}</div>`;
+          lineCard.innerHTML += `<div class="departure-times">` + times.slice(0, 5).map(depObj => {
+            let delayStr = "";
+            if (depObj.delay !== null && (depObj.delay <= -2 || depObj.delay >= 2)) {
+              const delayValue = Math.abs(depObj.delay);
+              const sign = depObj.delay >= 0 ? "+" : "-";
+              if (delayValue >= 5) {
+                delayStr = ` <span style="color:#eb0000;">${sign}${delayValue}'</span>`;
+              } else {
+                delayStr = ` ${sign}${delayValue}'`;
+              }
+            }
+            let platformStr = "";
+            if (depObj.platform) {
+              platformStr = ` pl. ${depObj.platform}`;
+            }
+            return `<span class="departure-item">${depObj.time}${delayStr} (${depObj.minutesLeft} min)${platformStr}</span>`;
+          }).join(" ") + `</div>`;
         }
       }
       if (hasDepartureForLine) {
@@ -478,7 +557,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
   }
-  
+
   fetchDepartures();
   setInterval(fetchDepartures, 60000);
 });

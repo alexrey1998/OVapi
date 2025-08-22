@@ -65,7 +65,6 @@ export const lineColors = {
   "271": "#FFDC00",
   "272": "#00B0A4",
   "274": "#EC619F",
-
   // Clés alphabétiques triées de A à Z avec les '+' placés après la lettre correspondante
   "A": "#FF7E00",
   "C1": "#000000",
@@ -84,4 +83,5 @@ export const lineColors = {
   "L": "#FF7E00",
   "M": "#00A828",
   "N": "#008CBE"
-};
+  };
+  
