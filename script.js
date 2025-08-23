@@ -63,7 +63,7 @@ function escapeHtml(s) {
  *    tout est traité comme suffixe: taille normale, couleur suffixColor
  */
 function formatStopNameHTML(rawName) {
-  const name = String(rawName ?? ""); // pas de trim pour conserver les espaces exacts
+  const name = String(rawName ?? "");
   const color = (settings?.stopName?.suffixColor ?? "default").toString();
   const scale = getInt(settings?.stopName?.prefixScalePct, 100);
 
@@ -71,24 +71,19 @@ function formatStopNameHTML(rawName) {
     ? `color:${escapeHtml(color)};`
     : "";
 
-  // Découpe sur la 1re virgule, en gardant exactement les espaces (y compris NBSP)
   const m = name.match(/^(.*?,)([\u00A0\u202F ]*)(.*)$/);
 
   if (m) {
-    const prefix = m[1] + m[2]; // virgule + espaces exacts
+    const prefix = m[1] + m[2];
     const suffix = m[3];
 
-    // IMPORTANT: plus de transform/inline-block → on garde la continuité
     const prefixHTML = `<span class="stopname-prefix" style="font-size:${scale}%;">${escapeHtml(prefix)}</span>`;
     const suffixHTML = `<span class="stopname-suffix" style="${colorStyle}">${escapeHtml(suffix)}</span>`;
     return prefixHTML + suffixHTML;
   }
 
-  // Pas de virgule → tout traité comme suffixe (couleur appliquée, taille normale)
   return `<span class="stopname-suffix" style="${colorStyle}">${escapeHtml(name)}</span>`;
 }
-
-
 
 document.addEventListener("DOMContentLoaded", function () {
   // Gestion de la bannière d'information
@@ -109,12 +104,9 @@ document.addEventListener("DOMContentLoaded", function () {
   const suggestionsContainer = document.getElementById("stop-suggestions");
   stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
 
-  // Variable pour suivre l'indice de suggestion actuellement sélectionnée
   let currentSuggestionIndex = -1;
-  // Variable pour stocker la position de l'utilisateur
   let userLocation = null;
 
-  // Fonction de calcul de la distance (Haversine) entre 2 points (km)
   function computeDistance(lat1, lon1, lat2, lon2) {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -125,7 +117,6 @@ document.addEventListener("DOMContentLoaded", function () {
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  // Surlignage des suggestions
   function updateSuggestionHighlight() {
     const suggestionItems = suggestionsContainer.querySelectorAll("div");
     suggestionItems.forEach((item, index) => {
@@ -133,7 +124,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Click sur le h1 → édition + suggestions par localisation
   stopNameEl.addEventListener("click", function() {
     const plain = stopNameEl.textContent;
     if (plain.trim() !== "") stopNameEl.textContent = "";
@@ -145,7 +135,6 @@ document.addEventListener("DOMContentLoaded", function () {
     this.focus();
   });
 
-  // Saisie → suggestions par texte
   stopNameEl.addEventListener("input", function() {
     currentSuggestionIndex = -1;
     const query = this.textContent.trim();
@@ -161,7 +150,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Flèches / Entrée
   stopNameEl.addEventListener("keydown", function(e) {
     const suggestionItems = suggestionsContainer.querySelectorAll("div");
     if (e.key === "ArrowDown") {
@@ -198,7 +186,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Blur → ferme suggestions + relance recherche
   stopNameEl.addEventListener("blur", function() {
     setTimeout(() => {
       suggestionsContainer.innerHTML = "";
@@ -211,7 +198,6 @@ document.addEventListener("DOMContentLoaded", function () {
     fetchDepartures();
   });
 
-  // Géolocalisation
   function updateUserLocation(callback) {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(function(position) {
@@ -227,7 +213,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Suggestions via position
   function fetchSuggestionsByLocation(lon, lat, callback) {
     const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
     fetch(url)
@@ -269,7 +254,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   }
 
-  // Suggestions via texte
   function fetchSuggestions(query) {
     const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}`;
     fetch(url)
@@ -309,7 +293,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   }
 
-  // Ajustement destination trains hors de Suisse
   async function adjustTrainDestination(dep) {
     const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
     try {
@@ -337,7 +320,6 @@ document.addEventListener("DOMContentLoaded", function () {
     return null;
   }
 
-  // Vérifie si un arrêt possède au moins un départ dans la fenêtre d’affichage
   async function checkDeparturesForStop(stopNameCandidate) {
     const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopNameCandidate)}&limit=${STATIONBOARD_LIMIT}`;
     try {
@@ -357,7 +339,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Met à jour STOP_NAME avec l'arrêt le plus proche ayant des départs à afficher
   if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
     updateUserLocation(function() {
       if (userLocation) {
@@ -385,8 +366,54 @@ document.addEventListener("DOMContentLoaded", function () {
 
   let selectedLines = new Set();
 
+  // Gestion modal filtre
+  function closeFilterModal() {
+    document.body.classList.remove("filters-open");
+    filterBox.classList.remove("modal-open");
+    if (!filterBox.classList.contains("hidden")) filterBox.classList.add("hidden");
+  }
+  function ensureFilterClose() {
+    let btn = document.getElementById("filter-close");
+    if (!btn || btn.parentElement !== filterBox) {
+      if (btn && btn.parentElement) btn.parentElement.removeChild(btn);
+      btn = document.createElement("button");
+      btn.id = "filter-close";
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Fermer");
+      btn.textContent = "×";
+      btn.addEventListener("click", closeFilterModal);
+      filterBox.prepend(btn);
+    }
+  }
+  function openFilterModal() {
+    ensureFilterClose();
+    filterBox.classList.remove("hidden");
+    filterBox.classList.add("modal-open");
+    document.body.classList.add("filters-open");
+  }
+
   toggleFilterBtn.addEventListener("click", () => {
-    filterBox.classList.toggle("hidden");
+    if (document.body.classList.contains("filters-open")) {
+      closeFilterModal();
+    } else {
+      openFilterModal();
+    }
+  });
+
+  // Fermer en cliquant hors de la modal
+  document.addEventListener("click", (e) => {
+    if (document.body.classList.contains("filters-open")) {
+      const clickInModal = filterBox.contains(e.target);
+      const clickOnToggle = toggleFilterBtn.contains(e.target);
+      if (!clickInModal && !clickOnToggle) closeFilterModal();
+    }
+  });
+
+  // Fermer avec Escape
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.body.classList.contains("filters-open")) {
+      closeFilterModal();
+    }
   });
 
   const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
@@ -400,7 +427,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Quitter le mode fullscreen si l'utilisateur clique en dehors du champ de recherche
   document.addEventListener("click", function(e) {
     if (document.fullscreenElement && !e.target.closest("#stop-name")) {
       document.exitFullscreen();
@@ -424,7 +450,6 @@ document.addEventListener("DOMContentLoaded", function () {
       const data = await response.json();
       let departures = (data && data.stationboard) ? data.stationboard : [];
 
-      // Ajustement des destinations pour les trains hors de Suisse
       await Promise.all(departures.map(async (dep) => {
         if (dep.category === "T" && dep.to && dep.to.indexOf(",") === -1 && !isSwissStation(dep.to)) {
           const adjusted = await adjustTrainDestination(dep);
@@ -466,6 +491,8 @@ ${lines.map(line => {
 }).join('')}
 </div>
 `;
+      // Réinsérer le bouton de fermeture en tête
+      ensureFilterClose();
 
       document.querySelectorAll(".line-checkbox").forEach(checkbox => {
         checkbox.addEventListener("change", () => {
@@ -518,7 +545,7 @@ ${lines.map(line => {
       if ((effectiveMs - nowMs) <= DISPLAY_WINDOW_MS) {
         groupedByLine[key][dep.to].push({
           time: new Date(schedMs).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-          minutesLeft: remainingMin, // ajusté avec le retard
+          minutesLeft: remainingMin,
           platform: (dep.stop.platform && dep.category !== "GB" && dep.stop.platform !== "null") ? dep.stop.platform : "",
           delay: (dep.stop.delay !== undefined && dep.stop.delay !== null) ? dep.stop.delay : null
         });
@@ -583,7 +610,6 @@ ${lines.map(line => {
         if (times.length > 0) {
           hasDepartureForLine = true;
 
-          // Destination avec règles préfixe/suffixe + aéroport
           let displayDestination = destination;
           let suffixAirport = "";
           if (displayDestination === "Zürich Flughafen" || displayDestination === "Genève-Aéroport") {

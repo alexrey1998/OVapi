@@ -1,4 +1,3 @@
-/* style.css */
 /* Réinitialiser marges, padding et box-sizing */
 * {
   margin: 0;
@@ -64,10 +63,10 @@ h1 {
   background-color: #f0f0f0;
 }
 
-/* Nouvelle barre de contrôle */
+/* Barre de contrôle */
 #control-bar {
   display: flex;
-  align-items: center;
+  align-items: stretch; /* remplace center */
   gap: 10px;
   margin-bottom: 20px;
 }
@@ -77,10 +76,17 @@ h1 {
   margin-bottom: 0;
 }
 
-/* Dernière mise à jour */
+/* Dernière mise à jour : style "bouton creux" */
 #last-update {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
   font-size: 1rem;
-  margin-bottom: 0;
+  border: 1px solid #007bff;  /* même bleu que le bouton */
+  border-radius: 5px;
+  background-color: transparent; /* pas de fond plein */
+  color: #007bff; /* texte bleu pour rappeler le bouton */
 }
 
 /* Boutons (filtre) */
@@ -98,7 +104,7 @@ h1 {
   background-color: #0056b3;
 }
 
-/* Boîte des filtres */
+/* Boîte des filtres (état par défaut dans le flux) */
 #line-filter-box {
   background: white;
   border: 1px solid #ddd;
@@ -196,3 +202,51 @@ body.fullscreen .line-card { min-height: 0; }
 body.fullscreen .line-title { font-size: 1.2em; }
 body.fullscreen .destination-title,
 body.fullscreen .departure-times { font-size: 0.9em; }
+
+/* --- Règles ajoutées pour hauteur égale dans la barre --- */
+#control-bar .filter-container { display: flex; align-items: stretch; }
+#control-bar #toggle-filter { margin: 0; height: 100%; }
+#last-update { margin: 0; } /* évite toute marge par défaut du <p> */
+
+/* --- Modal filtre plein écran + flou --- */
+body.filters-open::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.25);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1000;
+}
+
+#line-filter-box.modal-open {
+  position: fixed;
+  inset: 6vh 6vw;
+  max-height: 88vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.2);
+  padding: 16px;
+  z-index: 1001;
+}
+
+/* Bouton de fermeture dans la modal */
+#filter-close {
+  position: sticky;
+  top: 0;
+  margin-left: auto;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #888;
+  z-index: 1;
+}
+#filter-close:hover { color: #555; }
