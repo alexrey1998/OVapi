@@ -1,8 +1,8 @@
-// sw.js — cache avec stale-while-revalidate pour style.css et JS
-const CACHE_VERSION = "tplive-v4";
+// sw.js — cache avec stale-while-revalidate pour CSS et JS, sans versionnage d’URL
+const CACHE_VERSION = "tplive-v5";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 
-// Fichiers précachés (hors CSS/JS pour permettre la revalidation)
+// Précache minimal (pas de CSS/JS pour permettre la revalidation)
 const PRECACHE = [
   "/",
   "/index.html",
@@ -24,7 +24,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
-      await Promise.all(names.map(n => (n !== CACHE_NAME && n.startsWith("tplive-")) ? caches.delete(n) : Promise.resolve()));
+      await Promise.all(
+        names.map((n) => (n !== CACHE_NAME && n.startsWith("tplive-")) ? caches.delete(n) : Promise.resolve())
+      );
       await self.clients.claim();
     })()
   );
@@ -37,19 +39,19 @@ self.addEventListener("fetch", (event) => {
   // Laisser passer les requêtes externes (API opendata.ch, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // Pages HTML (navigation) : network-first
+  // Pages HTML (navigations): network-first
   if (req.mode === "navigate") {
     event.respondWith(networkFirst(req));
     return;
   }
 
-  // CSS principal : stale-while-revalidate
+  // CSS: stale-while-revalidate
   if (req.destination === "style" || url.pathname.endsWith("/style.css")) {
     event.respondWith(staleWhileRevalidate(req));
     return;
   }
 
-  // JS de l'app : stale-while-revalidate (script.js, settings.js, colors.js)
+  // JS applicatif: stale-while-revalidate
   if (
     req.destination === "script" &&
     (url.pathname.endsWith("/script.js") ||
@@ -70,7 +72,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(networkFirst(req));
 });
 
-/* ---- Strategies ---- */
+/* ----- Strategies ----- */
 async function cachePut(req, res) {
   try {
     const cache = await caches.open(CACHE_NAME);
@@ -99,7 +101,6 @@ async function networkFirst(req) {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(req);
     if (cached) return cached;
-    // Fallback minimal vers la racine en cas de navigation hors-ligne
     if (req.mode === "navigate") {
       const root = await cache.match("/");
       if (root) return root;
