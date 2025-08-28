@@ -10,7 +10,6 @@
 <meta name="theme-color" content="#007bff">
 <link rel="stylesheet" href="style.css">
 
-<!-- Favicons pour Firefox et navigateurs desktop -->
 <link rel="icon" type="image/svg+xml" href="icons/logo.svg">
 <link rel="icon" sizes="32x32" href="icons/icon-32.png">
 <link rel="icon" sizes="16x16" href="icons/icon-16.png">
@@ -19,10 +18,8 @@
 
 <h1 id="stop-name" contenteditable="true" spellcheck="false">Entrez le nom de l'arrêt ici</h1>
 
-<!-- Suggestions pour le nom de l'arrêt -->
 <div id="stop-suggestions"></div>
 
-<!-- Barre de contrôle regroupant la mise à jour, les actions et le filtre -->
 <div id="control-bar">
   <p id="last-update">
     <span>Màj : <span id="update-time">-</span></span>
@@ -41,16 +38,20 @@
   </div>
 </div>
 
-<!-- Conteneur des départs -->
 <div id="departures"></div>
 
-<!-- Thermomètre de ligne -->
 <div id="thermo-container" class="hidden"></div>
 
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(console.error);
+      navigator.serviceWorker.register('/sw.js').catch(console.error);
+    });
+    let __reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (__reloaded) return;
+      __reloaded = true;
+      location.reload();
     });
   }
 </script>
