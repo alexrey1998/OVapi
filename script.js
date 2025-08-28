@@ -52,7 +52,7 @@ function formatStopNameHTML(rawName) {
 }
 function pad2(n) { return n.toString().padStart(2, "0"); }
 function fmtHM(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
-function computeDistance(lat1, lon1, lat2, lon2) {
+function computeDistanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -124,49 +124,50 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Etat
   let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || "Entrez le nom de l'arrêt ici") : "Entrez le nom de l'arrêt ici";
+  let STOP_ID = null;                   // Interroger stationboard par ID quand dispo
   if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
   let currentSuggestionIndex = -1;
   let userLocation = null;
   let selectedLines = new Set();
   let expandedLineKey = null;
-  let lastNearestStops = [];
+  let lastNearestStops = [];           // [{ id, name, lat, lon, distanceM }, …] triée par distanceM ASC
 
   // Quick-actions
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
+
   document.getElementById("btn-gps")?.addEventListener("click", () => {
     updateUserLocation(async () => {
       if (!userLocation) return;
       const nearby = await fetchNearbyStops(userLocation.lon, userLocation.lat);
-      lastNearestStops = nearby.map(s => s.name).slice(0, 2);
-      for (const candidate of lastNearestStops) {
-        const ok = await checkDeparturesForStop(candidate);
-        if (ok) {
-          STOP_NAME = candidate;
-          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-          selectedLines.clear();
-          expandedLineKey = null;
-          await fetchDepartures();
-          break;
-        }
+      lastNearestStops = nearby.slice(0, 2);
+      if (lastNearestStops.length > 0) {
+        const sel = lastNearestStops[0];
+        STOP_ID = sel.id;
+        STOP_NAME = sel.name;
+        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+        selectedLines.clear();
+        expandedLineKey = null;
+        await fetchDepartures();
       }
-    });
+    }, true); // position fraîche au clic GPS
   });
+
   (document.getElementById("btn-toggle-nearby") || document.getElementById("btn-swap-stop"))?.addEventListener("click", async () => {
     if (lastNearestStops.length < 2) {
       if (!userLocation) return;
       const nearby = await fetchNearbyStops(userLocation.lon, userLocation.lat);
-      lastNearestStops = nearby.map(s => s.name).slice(0, 2);
+      lastNearestStops = nearby.slice(0, 2);
       if (lastNearestStops.length < 2) return;
     }
-    const [a, b] = lastNearestStops;
-    const target = (STOP_NAME === b) ? a : b;
-    if (target && target !== STOP_NAME) {
-      STOP_NAME = target;
-      if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-      selectedLines.clear();
-      expandedLineKey = null;
-      fetchDepartures();
-    }
+    const idx = lastNearestStops.findIndex(s => s.id === STOP_ID);
+    const target = idx === 0 ? lastNearestStops[1] : lastNearestStops[0];
+    if (!target) return;
+    STOP_ID = target.id;
+    STOP_NAME = target.name;
+    if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+    selectedLines.clear();
+    expandedLineKey = null;
+    fetchDepartures();
   });
 
   // Saisie nom d'arrêt + suggestions
@@ -179,7 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const list = await fetchNearbyStops(userLocation.lon, userLocation.lat);
           showSuggestionList(list);
         }
-      });
+      }); // ici on accepte maximumAge par défaut
       this.focus();
     });
     stopNameEl.addEventListener("input", function() {
@@ -195,7 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
     stopNameEl.addEventListener("keydown", function(e) {
-      const items = suggestionsContainer.querySelectorAll("div");
+      const items = suggestionsContainer.querySelectorAll("div[data-id]");
       if (e.key === "ArrowDown") {
         e.preventDefault();
         if (items.length > 0) { currentSuggestionIndex = (currentSuggestionIndex + 1) % items.length; updateSuggestionHighlight(); }
@@ -206,8 +207,11 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         if (items.length > 0) {
           if (currentSuggestionIndex === -1) { currentSuggestionIndex = 0; updateSuggestionHighlight(); }
-          const chosenName = items[currentSuggestionIndex].textContent;
+          const el = items[currentSuggestionIndex];
+          const chosenName = el.textContent;
+          const chosenId = el.getAttribute("data-id") || null;
           STOP_NAME = chosenName;
+          STOP_ID = chosenId;
           stopNameEl.innerHTML = formatStopNameHTML(chosenName);
           selectedLines.clear();
           expandedLineKey = null;
@@ -228,6 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
         currentSuggestionIndex = -1;
       }, 180);
       STOP_NAME = this.textContent.trim();
+      STOP_ID = null; // saisie libre → pas d’ID
       stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
       selectedLines.clear();
       expandedLineKey = null;
@@ -235,7 +240,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   function updateSuggestionHighlight() {
-    const items = suggestionsContainer.querySelectorAll("div");
+    const items = suggestionsContainer.querySelectorAll("div[data-id]");
     items.forEach((el, idx) => el.classList.toggle("selected", idx === currentSuggestionIndex));
   }
   function showSuggestionList(suggestions) {
@@ -244,14 +249,17 @@ document.addEventListener("DOMContentLoaded", () => {
       suggestionsContainer.style.display = "none";
       return;
     }
-    suggestionsContainer.innerHTML = suggestions.slice(0, 5).map(s => `<div>${escapeHtml(s.name)}</div>`).join("");
+    suggestionsContainer.innerHTML = suggestions.slice(0, 5).map(s =>
+      `<div data-id="${escapeHtml(String(s.id))}">${escapeHtml(s.name)}</div>`
+    ).join("");
     suggestionsContainer.style.display = "block";
     currentSuggestionIndex = -1;
-    suggestionsContainer.querySelectorAll("div").forEach((el, idx) => {
+    suggestionsContainer.querySelectorAll("div[data-id]").forEach((el) => {
       el.addEventListener("mousedown", () => {
-        const chosen = suggestions[idx].name;
-        STOP_NAME = chosen;
-        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosen);
+        const chosen = { id: el.getAttribute("data-id"), name: el.textContent };
+        STOP_ID = chosen.id;
+        STOP_NAME = chosen.name;
+        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosen.name);
         selectedLines.clear();
         expandedLineKey = null;
         suggestionsContainer.innerHTML = "";
@@ -259,36 +267,67 @@ document.addEventListener("DOMContentLoaded", () => {
         currentSuggestionIndex = -1;
         fetchDepartures();
       });
-      el.addEventListener("mouseover", () => { currentSuggestionIndex = idx; updateSuggestionHighlight(); });
     });
   }
 
   // Géoloc
-  function updateUserLocation(cb) {
+  function updateUserLocation(cb, fresh = false) {
     if (!navigator.geolocation) { if (cb) cb(); return; }
-    navigator.geolocation.getCurrentPosition(pos => {
-      userLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-      cb && cb();
-    }, () => cb && cb(), { enableHighAccuracy: true, maximumAge: 15000, timeout: 8000 });
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        userLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        cb && cb();
+      },
+      () => cb && cb(),
+      {
+        enableHighAccuracy: true,
+        maximumAge: fresh ? 0 : 15000,
+        timeout: 8000
+      }
+    );
   }
+
+  /* Filtre plateformes: suffixes de type quai/kante/steig/etc en fin de nom, ex. "… Kante A" */
+  const PLATFORM_SUFFIX_RE = /(quai|kante|gleis|bahnsteig|platform|binario|steig|bstg\.?|voie|gate)\s*[A-Z]?\d*\s*$/i;
+
+  function validStationEntry(s) {
+    const t = (s.type || "station").toLowerCase();
+    const name = s.name || "";
+    return t === "station" && s.id && name && !PLATFORM_SUFFIX_RE.test(name);
+  }
+
   async function fetchNearbyStops(lon, lat) {
     try {
-      const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
+      const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}&type=station`;
       const data = await fetch(url).then(r => r.json());
-      const stations = (data.stations || []).filter(s => !s.type || s.type.toLowerCase() === "station");
-      const sorted = stations.sort((a, b) => {
-        const d1 = computeDistance(lat, lon, a.coordinate.y, a.coordinate.x);
-        const d2 = computeDistance(lat, lon, b.coordinate.y, b.coordinate.x);
-        return d1 - d2;
+      const raw = (data.stations || []).filter(validStationEntry);
+      // Dédupliquer par id
+      const byId = new Map();
+      for (const s of raw) if (!byId.has(s.id)) byId.set(s.id, s);
+      const uniq = Array.from(byId.values());
+      // Distance: privilégier distance API (mètres), fallback haversine
+      const withDist = uniq.map(s => {
+        const apiM = Number(s.distance);
+        const lat2 = s.coordinate?.y;
+        const lon2 = s.coordinate?.x;
+        const haversineM = (typeof lat2 === "number" && typeof lon2 === "number")
+          ? computeDistanceKm(lat, lon, lat2, lon2) * 1000
+          : Number.POSITIVE_INFINITY;
+        const dM = Number.isFinite(apiM) ? apiM : haversineM;
+        return { id: String(s.id), name: s.name, lat: lat2, lon: lon2, distanceM: dM };
       });
-      return sorted.slice(0, 5);
+      withDist.sort((a, b) => a.distanceM - b.distanceM);
+      return withDist;
     } catch { return []; }
   }
+
   async function fetchSuggestions(query) {
     try {
       const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}`;
       const data = await fetch(url).then(r => r.json());
-      return (data.stations || []).filter(s => !s.type || s.type.toLowerCase() === "station").slice(0, 5);
+      const list = (data.stations || []).filter(validStationEntry);
+      // Retour {id,name} (pas de tri par distance ici, la requête n'est pas géolocalisée)
+      return list.slice(0, 10).map(s => ({ id: String(s.id), name: s.name }));
     } catch { return []; }
   }
 
@@ -376,8 +415,10 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  async function checkDeparturesForStop(stopNameCandidate) {
-    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopNameCandidate)}&limit=${STATIONBOARD_LIMIT}`;
+  async function checkDeparturesForStation(st) {
+    const key = st?.id || st?.name;
+    if (!key) return false;
+    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
     try {
       const data = await fetch(API_URL).then(r => r.json());
       const departures = data.stationboard || [];
@@ -395,8 +436,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Récupération + rendu
   async function fetchDepartures() {
-    if (!STOP_NAME || STOP_NAME.trim() === "") return;
-    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(STOP_NAME)}&limit=${STATIONBOARD_LIMIT}`;
+    const key = STOP_ID || STOP_NAME;
+    if (!key || String(key).trim() === "") return;
+    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
     try {
       const data = await fetch(API_URL).then(r => r.json());
       let departures = (data && data.stationboard) ? data.stationboard : [];
@@ -691,14 +733,16 @@ document.addEventListener("DOMContentLoaded", () => {
       updateUserLocation(async () => {
         if (userLocation) {
           const nearby = await fetchNearbyStops(userLocation.lon, userLocation.lat);
-          lastNearestStops = nearby.map(s => s.name).slice(0, 2);
-          for (const s of lastNearestStops) {
-            if (await checkDeparturesForStop(s)) { STOP_NAME = s; break; }
+          lastNearestStops = nearby.slice(0, 2);
+          if (lastNearestStops.length) {
+            const sel = lastNearestStops[0];               // Toujours le plus proche
+            STOP_ID = sel.id;
+            STOP_NAME = sel.name;
+            if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
           }
-          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
         }
         fetchDepartures();
-      });
+      }, true); // position fraîche au premier chargement
     } else {
       fetchDepartures();
     }
