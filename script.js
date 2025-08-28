@@ -52,7 +52,7 @@ function formatStopNameHTML(rawName) {
 }
 function pad2(n) { return n.toString().padStart(2, "0"); }
 function fmtHM(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
-function computeDistanceKm(lat1, lon1, lat2, lon2) {
+function computeDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -124,50 +124,53 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Etat
   let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || "Entrez le nom de l'arrêt ici") : "Entrez le nom de l'arrêt ici";
-  let STOP_ID = null;                   // Interroger stationboard par ID quand dispo
   if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
   let currentSuggestionIndex = -1;
   let userLocation = null;
   let selectedLines = new Set();
   let expandedLineKey = null;
-  let lastNearestStops = [];           // [{ id, name, lat, lon, distanceM }, …] triée par distanceM ASC
+  let lastNearbySuggestions = [];     // liste issue de fetchSuggestionsByLocation (objets API, utilisés par Swipe)
 
   // Quick-actions
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
 
   document.getElementById("btn-gps")?.addEventListener("click", () => {
-    updateUserLocation(async () => {
+    updateUserLocation(() => {
       if (!userLocation) return;
-      const nearby = await fetchNearbyStops(userLocation.lon, userLocation.lat);
-      lastNearestStops = nearby.slice(0, 2);
-      if (lastNearestStops.length > 0) {
-        const sel = lastNearestStops[0];
-        STOP_ID = sel.id;
-        STOP_NAME = sel.name;
-        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-        selectedLines.clear();
-        expandedLineKey = null;
-        await fetchDepartures();
-      }
-    }, true); // position fraîche au clic GPS
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, (suggestions) => {
+        lastNearbySuggestions = suggestions || [];
+        if (lastNearbySuggestions.length > 0) {
+          const sel = lastNearbySuggestions[0];
+          STOP_NAME = sel.name;
+          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+          selectedLines.clear();
+          expandedLineKey = null;
+          fetchDepartures();
+        }
+      });
+    });
   });
 
-  (document.getElementById("btn-toggle-nearby") || document.getElementById("btn-swap-stop"))?.addEventListener("click", async () => {
-    if (lastNearestStops.length < 2) {
-      if (!userLocation) return;
-      const nearby = await fetchNearbyStops(userLocation.lon, userLocation.lat);
-      lastNearestStops = nearby.slice(0, 2);
-      if (lastNearestStops.length < 2) return;
+  document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
+    const applyToggle = () => {
+      if (lastNearbySuggestions.length < 2) return;
+      const first = lastNearbySuggestions[0]?.name;
+      const second = lastNearbySuggestions[1]?.name;
+      if (!first || !second) return;
+      STOP_NAME = (STOP_NAME === first) ? second : first;
+      if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+      selectedLines.clear();
+      expandedLineKey = null;
+      fetchDepartures();
+    };
+    if (lastNearbySuggestions.length >= 2) {
+      applyToggle();
+    } else if (userLocation) {
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, (s) => {
+        lastNearbySuggestions = s || [];
+        applyToggle();
+      });
     }
-    const idx = lastNearestStops.findIndex(s => s.id === STOP_ID);
-    const target = idx === 0 ? lastNearestStops[1] : lastNearestStops[0];
-    if (!target) return;
-    STOP_ID = target.id;
-    STOP_NAME = target.name;
-    if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-    selectedLines.clear();
-    expandedLineKey = null;
-    fetchDepartures();
   });
 
   // Saisie nom d'arrêt + suggestions
@@ -175,28 +178,31 @@ document.addEventListener("DOMContentLoaded", () => {
     stopNameEl.addEventListener("click", function() {
       const plain = stopNameEl.textContent;
       if (plain.trim() !== "") stopNameEl.textContent = "";
-      updateUserLocation(async () => {
+      updateUserLocation(function() {
         if (userLocation && stopNameEl.textContent.trim() === "") {
-          const list = await fetchNearbyStops(userLocation.lon, userLocation.lat);
-          showSuggestionList(list);
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat);
         }
-      }); // ici on accepte maximumAge par défaut
+      });
       this.focus();
     });
+
     stopNameEl.addEventListener("input", function() {
       currentSuggestionIndex = -1;
       const q = this.textContent.trim();
       if (q.length > 0) {
-        fetchSuggestions(q).then(showSuggestionList);
-      } else if (userLocation) {
-        fetchNearbyStops(userLocation.lon, userLocation.lat).then(showSuggestionList);
+        fetchSuggestions(q);
       } else {
-        suggestionsContainer.innerHTML = "";
-        suggestionsContainer.style.display = "none";
+        if (userLocation) {
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat);
+        } else {
+          suggestionsContainer.innerHTML = "";
+          suggestionsContainer.style.display = "none";
+        }
       }
     });
+
     stopNameEl.addEventListener("keydown", function(e) {
-      const items = suggestionsContainer.querySelectorAll("div[data-id]");
+      const items = suggestionsContainer.querySelectorAll("div");
       if (e.key === "ArrowDown") {
         e.preventDefault();
         if (items.length > 0) { currentSuggestionIndex = (currentSuggestionIndex + 1) % items.length; updateSuggestionHighlight(); }
@@ -207,14 +213,10 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         if (items.length > 0) {
           if (currentSuggestionIndex === -1) { currentSuggestionIndex = 0; updateSuggestionHighlight(); }
-          const el = items[currentSuggestionIndex];
-          const chosenName = el.textContent;
-          const chosenId = el.getAttribute("data-id") || null;
+          const chosenName = items[currentSuggestionIndex].textContent;
           STOP_NAME = chosenName;
-          STOP_ID = chosenId;
           stopNameEl.innerHTML = formatStopNameHTML(chosenName);
           selectedLines.clear();
-          expandedLineKey = null;
           suggestionsContainer.innerHTML = "";
           suggestionsContainer.style.display = "none";
           currentSuggestionIndex = -1;
@@ -225,113 +227,236 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     });
+
     stopNameEl.addEventListener("blur", function() {
       setTimeout(() => {
         suggestionsContainer.innerHTML = "";
         suggestionsContainer.style.display = "none";
         currentSuggestionIndex = -1;
-      }, 180);
+      }, 200);
       STOP_NAME = this.textContent.trim();
-      STOP_ID = null; // saisie libre → pas d’ID
       stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
       selectedLines.clear();
-      expandedLineKey = null;
       fetchDepartures();
     });
   }
+
   function updateSuggestionHighlight() {
-    const items = suggestionsContainer.querySelectorAll("div[data-id]");
+    const items = suggestionsContainer.querySelectorAll("div");
     items.forEach((el, idx) => el.classList.toggle("selected", idx === currentSuggestionIndex));
   }
-  function showSuggestionList(suggestions) {
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      suggestionsContainer.innerHTML = "";
-      suggestionsContainer.style.display = "none";
-      return;
-    }
-    suggestionsContainer.innerHTML = suggestions.slice(0, 5).map(s =>
-      `<div data-id="${escapeHtml(String(s.id))}">${escapeHtml(s.name)}</div>`
-    ).join("");
-    suggestionsContainer.style.display = "block";
-    currentSuggestionIndex = -1;
-    suggestionsContainer.querySelectorAll("div[data-id]").forEach((el) => {
-      el.addEventListener("mousedown", () => {
-        const chosen = { id: el.getAttribute("data-id"), name: el.textContent };
-        STOP_ID = chosen.id;
-        STOP_NAME = chosen.name;
-        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosen.name);
-        selectedLines.clear();
-        expandedLineKey = null;
-        suggestionsContainer.innerHTML = "";
-        suggestionsContainer.style.display = "none";
-        currentSuggestionIndex = -1;
-        fetchDepartures();
+
+  /* ===== Ancienne logique corrigée: suggestions par géoloc, tri local fiable ===== */
+  function hasValidCoord(s) {
+    return s && s.coordinate && typeof s.coordinate.y === "number" && typeof s.coordinate.x === "number" &&
+           Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
+  }
+  function fetchSuggestionsByLocation(lon, lat, callback) {
+    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const stations = data.stations || [];
+        const filtered = stations.filter(s => (!s.type || s.type.toLowerCase() === "station") && hasValidCoord(s));
+        const suggestions = filtered
+          .sort((a, b) => {
+            // Latitude = coordinate.y, Longitude = coordinate.x
+            const d1 = computeDistance(lat, lon, a.coordinate.y, a.coordinate.x);
+            const d2 = computeDistance(lat, lon, b.coordinate.y, b.coordinate.x);
+            return d1 - d2;
+          })
+          .slice(0, 5);
+
+        lastNearbySuggestions = suggestions;
+
+        if (document.activeElement === stopNameEl && stopNameEl.textContent.trim() === "") {
+          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${s.name}</div>`).join("");
+          suggestionsContainer.style.display = "block";
+          currentSuggestionIndex = -1;
+          suggestionsContainer.querySelectorAll("div").forEach((el, index) => {
+            el.addEventListener("mousedown", function() {
+              const chosenName = suggestions[index].name;
+              STOP_NAME = chosenName;
+              stopNameEl.innerHTML = formatStopNameHTML(chosenName);
+              selectedLines.clear();
+              suggestionsContainer.innerHTML = "";
+              suggestionsContainer.style.display = "none";
+              currentSuggestionIndex = -1;
+              fetchDepartures();
+            });
+            el.addEventListener("mouseover", function() {
+              currentSuggestionIndex = index;
+              updateSuggestionHighlight();
+            });
+          });
+        }
+        if (typeof callback === "function") callback(suggestions);
+      })
+      .catch(err => {
+        console.error("Erreur suggestions géoloc", err);
+        if (typeof callback === "function") callback([]);
       });
-    });
   }
 
-  // Géoloc
-  function updateUserLocation(cb, fresh = false) {
+  function fetchSuggestions(query) {
+    const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const stations = data.stations || [];
+        const suggestions = stations.filter(s => !s.type || s.type.toLowerCase() === "station").slice(0, 5);
+        if (suggestions.length > 0) {
+          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${s.name}</div>`).join("");
+          suggestionsContainer.style.display = "block";
+          currentSuggestionIndex = -1;
+          suggestionsContainer.querySelectorAll("div").forEach((el, index) => {
+            el.addEventListener("mousedown", function() {
+              const chosenName = suggestions[index].name;
+              STOP_NAME = chosenName;
+              stopNameEl.innerHTML = formatStopNameHTML(chosenName);
+              selectedLines.clear();
+              suggestionsContainer.innerHTML = "";
+              suggestionsContainer.style.display = "none";
+              currentSuggestionIndex = -1;
+              fetchDepartures();
+            });
+            el.addEventListener("mouseover", function() {
+              currentSuggestionIndex = index;
+              updateSuggestionHighlight();
+            });
+          });
+        } else {
+          suggestionsContainer.innerHTML = "";
+          suggestionsContainer.style.display = "none";
+          currentSuggestionIndex = -1;
+        }
+      })
+      .catch(err => console.error("Erreur suggestions", err));
+  }
+
+  // Géoloc (comme avant)
+  function updateUserLocation(cb) {
     if (!navigator.geolocation) { if (cb) cb(); return; }
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        userLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        cb && cb();
-      },
-      () => cb && cb(),
-      {
-        enableHighAccuracy: true,
-        maximumAge: fresh ? 0 : 15000,
-        timeout: 8000
-      }
+      pos => { userLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude }; cb && cb(); },
+      err => { console.error("Erreur GPS", err); cb && cb(); }
     );
   }
 
-  /* Filtre plateformes: suffixes de type quai/kante/steig/etc en fin de nom, ex. "… Kante A" */
-  const PLATFORM_SUFFIX_RE = /(quai|kante|gleis|bahnsteig|platform|binario|steig|bstg\.?|voie|gate)\s*[A-Z]?\d*\s*$/i;
-
-  function validStationEntry(s) {
-    const t = (s.type || "station").toLowerCase();
-    const name = s.name || "";
-    return t === "station" && s.id && name && !PLATFORM_SUFFIX_RE.test(name);
+  // Ajustement destination trains internationaux
+  async function adjustTrainDestination(dep) {
+    const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
+    try {
+      const locData = await fetch(locURL).then(r => r.json());
+      const station = locData.stations && locData.stations[0];
+      if (!station) return null;
+      const stationId = station.id;
+      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}&limit=5`;
+      const data = await fetch(url).then(r => r.json());
+      const departures = data.stationboard || [];
+      const currentName = parseInt(dep.name);
+      for (const other of departures) {
+        const otherName = parseInt(other.name);
+        if (otherName === currentName || otherName === currentName + 1) {
+          if (other.to && other.to !== dep.to && !isSwissStation(other.to)) return other.to;
+        }
+      }
+    } catch (e) {
+      console.error("Ajustement destination", dep.to, e);
+    }
+    return null;
   }
 
-  async function fetchNearbyStops(lon, lat) {
+  async function checkDeparturesForStop(stopNameCandidate) {
+    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopNameCandidate)}&limit=${STATIONBOARD_LIMIT}`;
     try {
-      const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}&type=station`;
-      const data = await fetch(url).then(r => r.json());
-      const raw = (data.stations || []).filter(validStationEntry);
-      // Dédupliquer par id
-      const byId = new Map();
-      for (const s of raw) if (!byId.has(s.id)) byId.set(s.id, s);
-      const uniq = Array.from(byId.values());
-      // Distance: privilégier distance API (mètres), fallback haversine
-      const withDist = uniq.map(s => {
-        const apiM = Number(s.distance);
-        const lat2 = s.coordinate?.y;
-        const lon2 = s.coordinate?.x;
-        const haversineM = (typeof lat2 === "number" && typeof lon2 === "number")
-          ? computeDistanceKm(lat, lon, lat2, lon2) * 1000
-          : Number.POSITIVE_INFINITY;
-        const dM = Number.isFinite(apiM) ? apiM : haversineM;
-        return { id: String(s.id), name: s.name, lat: lat2, lon: lon2, distanceM: dM };
+      const data = await fetch(API_URL).then(r => r.json());
+      const departures = data.stationboard || [];
+      const now = Date.now();
+      return departures.some(dep => {
+        const sched = new Date(dep.stop?.departure).getTime();
+        const delay = Number(dep.stop?.delay || 0);
+        const eff = sched + (Number.isFinite(delay) ? delay * 60000 : 0);
+        return Number.isFinite(eff) && (eff - now) <= DISPLAY_WINDOW_MS;
       });
-      withDist.sort((a, b) => a.distanceM - b.distanceM);
-      return withDist;
-    } catch { return []; }
+    } catch {
+      return false;
+    }
   }
 
-  async function fetchSuggestions(query) {
+  // Récupération + rendu
+  async function fetchDepartures() {
+    const key = STOP_NAME;
+    if (!key || String(key).trim() === "") return;
+    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
     try {
-      const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}`;
-      const data = await fetch(url).then(r => r.json());
-      const list = (data.stations || []).filter(validStationEntry);
-      // Retour {id,name} (pas de tri par distance ici, la requête n'est pas géolocalisée)
-      return list.slice(0, 10).map(s => ({ id: String(s.id), name: s.name }));
-    } catch { return []; }
+      const data = await fetch(API_URL).then(r => r.json());
+      let departures = (data && data.stationboard) ? data.stationboard : [];
+
+      await Promise.all(departures.map(async dep => {
+        if (dep.category === "T" && dep.to && dep.to.indexOf(",") === -1 && !isSwissStation(dep.to)) {
+          const adjusted = await adjustTrainDestination(dep);
+          if (adjusted) dep.to = adjusted;
+        }
+      }));
+
+      const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
+      lines.sort((a, b) => {
+        const numA = a.split(" ").pop();
+        const numB = b.split(" ").pop();
+        const isNumA = !isNaN(numA);
+        const isNumB = !isNaN(numB);
+        if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
+        if (isNumA) return -1;
+        if (isNumB) return 1;
+        return numA.localeCompare(numB);
+      });
+      if (selectedLines.size === 0) lines.forEach(l => selectedLines.add(l));
+
+      filterBox.innerHTML = `
+        <div id="select-all-container" style="display:flex;gap:8px;margin-bottom:8px;">
+          <button id="select-all">Sélectionner tout</button>
+          <button id="deselect-all">Désélectionner tout</button>
+        </div>
+        <div id="checkboxes-container">
+          ${lines.map(line => {
+            const checked = selectedLines.has(line) ? "checked" : "";
+            return `<label class="filter-item">
+              <input type="checkbox" value="${escapeHtml(line)}" ${checked} class="line-checkbox"> Ligne ${escapeHtml(line)}
+            </label>`;
+          }).join("")}
+        </div>
+      `;
+      ensureFilterClose();
+      filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
+        cb.addEventListener("change", () => {
+          if (cb.checked) selectedLines.add(cb.value);
+          else selectedLines.delete(cb.value);
+          renderDepartures(departures);
+        });
+      });
+      filterBox.querySelector("#select-all")?.addEventListener("click", () => {
+        lines.forEach(l => selectedLines.add(l));
+        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
+        renderDepartures(departures);
+      });
+      filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
+        selectedLines.clear();
+        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
+        renderDepartures(departures);
+      });
+
+      renderDepartures(departures);
+      const now = new Date();
+      if (lastUpdateElement) {
+        lastUpdateElement.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      }
+    } catch (e) {
+      console.error("Erreur chargement départs", e);
+      departuresContainer.innerHTML = "<p>Erreur de chargement</p>";
+    }
   }
 
-  // Filtre lignes (modal)
   function closeFilterModal() {
     document.body.classList.remove("filters-open");
     filterBox.classList.remove("modal-open");
@@ -371,7 +496,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Escape" && document.body.classList.contains("filters-open")) closeFilterModal();
   });
 
-  // Plein écran
   const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
   fullscreenToggleBtn?.addEventListener("click", () => {
     if (!document.fullscreenElement) {
@@ -383,139 +507,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // MAJ horloge
-  function updateLastUpdateTime() {
-    const now = new Date();
-    if (lastUpdateElement) {
-      lastUpdateElement.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    }
-  }
-
-  // Ajustement destination trains internationaux
-  async function adjustTrainDestination(dep) {
-    const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
-    try {
-      const locData = await fetch(locURL).then(r => r.json());
-      const station = locData.stations && locData.stations[0];
-      if (!station) return null;
-      const stationId = station.id;
-      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}&limit=5`;
-      const data = await fetch(url).then(r => r.json());
-      const departures = data.stationboard || [];
-      const currentName = parseInt(dep.name);
-      for (const other of departures) {
-        const otherName = parseInt(other.name);
-        if (otherName === currentName || otherName === currentName + 1) {
-          if (other.to && other.to !== dep.to && !isSwissStation(other.to)) return other.to;
-        }
-      }
-    } catch (e) {
-      console.error("Ajustement destination", dep.to, e);
-    }
-    return null;
-  }
-
-  async function checkDeparturesForStation(st) {
-    const key = st?.id || st?.name;
-    if (!key) return false;
-    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
-    try {
-      const data = await fetch(API_URL).then(r => r.json());
-      const departures = data.stationboard || [];
-      const now = Date.now();
-      return departures.some(dep => {
-        const sched = new Date(dep.stop?.departure).getTime();
-        const delay = Number(dep.stop?.delay || 0);
-        const eff = sched + (Number.isFinite(delay) ? delay * 60000 : 0);
-        return Number.isFinite(eff) && (eff - now) <= DISPLAY_WINDOW_MS;
-      });
-    } catch {
-      return false;
-    }
-  }
-
-  // Récupération + rendu
-  async function fetchDepartures() {
-    const key = STOP_ID || STOP_NAME;
-    if (!key || String(key).trim() === "") return;
-    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
-    try {
-      const data = await fetch(API_URL).then(r => r.json());
-      let departures = (data && data.stationboard) ? data.stationboard : [];
-
-      // Ajuster certains trains si nécessaire
-      await Promise.all(departures.map(async dep => {
-        if (dep.category === "T" && dep.to && dep.to.indexOf(",") === -1 && !isSwissStation(dep.to)) {
-          const adjusted = await adjustTrainDestination(dep);
-          if (adjusted) dep.to = adjusted;
-        }
-      }));
-
-      // Construire liste des lignes disponibles pour filtre
-      const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
-      lines.sort((a, b) => {
-        const numA = a.split(" ").pop();
-        const numB = b.split(" ").pop();
-        const isNumA = !isNaN(numA);
-        const isNumB = !isNaN(numB);
-        if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
-        if (isNumA) return -1;
-        if (isNumB) return 1;
-        return numA.localeCompare(numB);
-      });
-      if (selectedLines.size === 0) lines.forEach(l => selectedLines.add(l));
-
-      // Boîte filtre
-      filterBox.innerHTML = `
-        <div id="select-all-container" style="display:flex;gap:8px;margin-bottom:8px;">
-          <button id="select-all">Sélectionner tout</button>
-          <button id="deselect-all">Désélectionner tout</button>
-        </div>
-        <div id="checkboxes-container">
-          ${lines.map(line => {
-            const checked = selectedLines.has(line) ? "checked" : "";
-            return `<label class="filter-item">
-              <input type="checkbox" value="${escapeHtml(line)}" ${checked} class="line-checkbox"> Ligne ${escapeHtml(line)}
-            </label>`;
-          }).join("")}
-        </div>
-      `;
-      ensureFilterClose();
-      filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
-        cb.addEventListener("change", () => {
-          if (cb.checked) selectedLines.add(cb.value);
-          else selectedLines.delete(cb.value);
-          renderDepartures(departures);
-        });
-      });
-      filterBox.querySelector("#select-all")?.addEventListener("click", () => {
-        lines.forEach(l => selectedLines.add(l));
-        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
-        renderDepartures(departures);
-      });
-      filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
-        selectedLines.clear();
-        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
-        renderDepartures(departures);
-      });
-
-      renderDepartures(departures);
-      updateLastUpdateTime();
-    } catch (e) {
-      console.error("Erreur chargement départs", e);
-      departuresContainer.innerHTML = "<p>Erreur de chargement</p>";
-    }
-  }
-
   function renderDepartures(departures) {
     departuresContainer.innerHTML = "";
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
 
-    // Filtrer lignes sélectionnées
     const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
-
-    // Grouper par ligne puis destination
     const groupedByLine = {};
     const nowMs = Date.now();
 
@@ -555,7 +552,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     for (const [lineKey, destinations] of sortedLines) {
-      // Déterminer contenu pastille + couleur
       const [category, ...numParts] = lineKey.split(" ");
       const number = numParts.join(" ").trim();
       let content = "";
@@ -579,7 +575,6 @@ document.addEventListener("DOMContentLoaded", () => {
       card.className = "line-card";
       card.dataset.lineKey = lineKey;
 
-      // Entête: pastille seule + ajustement padding via canvas
       const lineRow = document.createElement("div");
       lineRow.className = "line-row";
       const badge = document.createElement("span");
@@ -593,7 +588,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const isExpanded = expandedLineKey === lineKey;
 
       if (isExpanded) {
-        // Détails par destination (pas de countdown-strip ici)
         for (const [dest, times] of Object.entries(destinations)) {
           if (times.length === 0) continue;
           let displayDest = dest;
@@ -618,10 +612,9 @@ document.addEventListener("DOMContentLoaded", () => {
           card.appendChild(list);
         }
 
-        // Click départ → thermomètre ou repli si click ailleurs
         card.addEventListener("click", (e) => {
           const depEl = e.target.closest(".departure-item");
-          if (!depEl) { // replier
+          if (!depEl) {
             expandedLineKey = null;
             renderDepartures(departures);
             return;
@@ -631,20 +624,17 @@ document.addEventListener("DOMContentLoaded", () => {
           showThermometer(STOP_NAME, dest, timeStr, content);
         });
       } else {
-        // Vue compacte: destinations + countdown par destination
         card.classList.add("compact");
 
         for (const [dest, times] of Object.entries(destinations)) {
           if (!times.length) continue;
 
-          // Titre destination (même style que détaillé)
           const destDiv = document.createElement("div");
           destDiv.className = "destination-title";
           const suffixAirport = (dest === "Zürich Flughafen" || dest === "Genève-Aéroport") ? " ✈" : "";
           destDiv.innerHTML = formatStopNameHTML(dest) + escapeHtml(suffixAirport);
           card.appendChild(destDiv);
 
-          // Countdown par destination avec mise en avant du premier
           const strip = document.createElement("div");
           strip.className = "countdown-strip";
           const mins = times.map(o => o.minutesLeft).sort((a,b)=>a-b).slice(0,5);
@@ -652,7 +642,6 @@ document.addEventListener("DOMContentLoaded", () => {
           card.appendChild(strip);
         }
 
-        // Click carte -> développer
         card.addEventListener("click", () => {
           expandedLineKey = lineKey;
           renderDepartures(departures);
@@ -727,22 +716,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Démarrage
+  // Démarrage — reprendre l’ancienne sélection: premier des 5 plus proches ayant des départs
   (async () => {
     if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
-      updateUserLocation(async () => {
+      updateUserLocation(function() {
         if (userLocation) {
-          const nearby = await fetchNearbyStops(userLocation.lon, userLocation.lat);
-          lastNearestStops = nearby.slice(0, 2);
-          if (lastNearestStops.length) {
-            const sel = lastNearestStops[0];               // Toujours le plus proche
-            STOP_ID = sel.id;
-            STOP_NAME = sel.name;
-            if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-          }
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async function(suggestions) {
+            lastNearbySuggestions = suggestions || [];
+            let chosen = null;
+            for (let i = 0; i < Math.min(5, lastNearbySuggestions.length); i++) {
+              const candidate = lastNearbySuggestions[i].name;
+              const ok = await checkDeparturesForStop(candidate);
+              if (ok) { chosen = candidate; break; }
+            }
+            if (!chosen && lastNearbySuggestions.length > 0) chosen = lastNearbySuggestions[0].name;
+            if (chosen) {
+              STOP_NAME = chosen;
+              if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+              fetchDepartures();
+            }
+          });
         }
-        fetchDepartures();
-      }, true); // position fraîche au premier chargement
+      });
     } else {
       fetchDepartures();
     }
