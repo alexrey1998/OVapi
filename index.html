@@ -44,8 +44,14 @@
 
 <script>
   if ('serviceWorker' in navigator) {
+    let _reloaded = false;
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').catch(console.error);
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_reloaded) return;
+      _reloaded = true;
+      location.reload();
     });
   }
 </script>
