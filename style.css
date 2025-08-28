@@ -14,20 +14,20 @@ body {
   padding: 20px;
 }
 
-/* Bannière d'information en haut de la page */
+/* H1 éditable + placeholder quand vide */
+#stop-name[contenteditable="true"] { outline: none; cursor: text; }
+#stop-name:empty::before { content: "Entrez le nom de l'arrêt ici"; color: #9ca3af; }
+
+/* Bannière */
 #banner {
   background-color: #eb0000;
-  color: #ffffff; /* Texte en blanc */
+  color: #ffffff;
   padding: 10px;
   text-align: center;
   position: relative;
   border-bottom: 1px solid #ccc;
 }
-
-#banner p {
-  margin: 0;
-}
-
+#banner p { margin: 0; }
 #banner button {
   position: absolute;
   right: 10px;
@@ -46,7 +46,7 @@ h1 {
   margin-bottom: 20px;
 }
 
-/* Suggestions pour le nom de l'arrêt */
+/* Suggestions */
 #stop-suggestions {
   border: 1px solid #ccc;
   background: #fff;
@@ -66,55 +66,70 @@ h1 {
 /* Barre de contrôle */
 #control-bar {
   display: flex;
-  align-items: stretch; /* remplace center */
+  align-items: stretch;
   gap: 10px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 
-/* Ajustement de la marge pour le filtre */
-#control-bar .filter-container {
-  margin-bottom: 0;
-}
-
-/* Dernière mise à jour : style "bouton creux" */
+/* Boîte de mise à jour bleue avec actions à droite */
 #last-update {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 10px 20px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
   font-size: 1rem;
-  border: 1px solid #007bff;  /* même bleu que le bouton */
-  border-radius: 5px;
-  background-color: transparent; /* pas de fond plein */
-  color: #007bff; /* texte bleu pour rappeler le bouton */
+  background-color: #007bff;
+  color: #ffffff;
+  border-radius: 8px;
+  min-width: 280px;
+  flex: 1 1 auto;
 }
+#last-update #quick-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+#last-update #quick-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  cursor: pointer;
+}
+#last-update #quick-actions button:hover { background: #f5f7fb; }
 
-/* Boutons (filtre) */
-#toggle-filter {
-  padding: 10px 20px;
+/* Boutons (filtre, plein écran) */
+#toggle-filter,
+#fullscreen-toggle {
+  padding: 10px 14px;
   font-size: 1rem;
   background-color: #007bff;
   color: white;
   border: none;
-  border-radius: 5px;
+  border-radius: 7px;
   cursor: pointer;
-  margin-bottom: 10px;
 }
-#toggle-filter:hover {
+#toggle-filter:hover,
+#fullscreen-toggle:hover {
   background-color: #0056b3;
 }
 
-/* Boîte des filtres (état par défaut dans le flux) */
+/* Boîte des filtres */
 #line-filter-box {
   background: white;
   border: 1px solid #ddd;
-  border-radius: 5px;
+  border-radius: 7px;
   padding: 10px;
   margin-top: 5px;
 }
 .hidden { display: none; }
-
-/* Style des cases à cocher */
 .filter-item {
   display: flex;
   align-items: center;
@@ -122,93 +137,129 @@ h1 {
   margin-bottom: 5px;
 }
 
+/* Quick actions générique (hors #last-update, si réutilisé) */
+#quick-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+#quick-actions button,
+.qa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+#quick-actions button:hover,
+.qa-btn:hover { background: #f5f7fb; }
+
 /* Conteneur des départs : grille responsive */
 #departures {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
 }
 
 /* Carte par ligne */
 .line-card {
   background: white;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  padding: 14px;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.08);
   min-width: 250px;
   position: static;
   display: flex;
   flex-direction: column;
   min-height: 0;
   break-inside: avoid;
+  cursor: pointer;
 }
 
-/* Titre de la ligne */
-.line-title {
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: #007bff;
-  margin-bottom: 10px;
+/* En-tête ligne */
+.line-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
-/* Destination */
+/* Badge de ligne – rectangulaire, texte blanc, police plus grande et grasse */
+.line-badge {
+  display: inline-block;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.35rem;
+  line-height: 1;
+  padding: 6px 12px;           /* sera ajusté en JS (horizontaux) */
+  border-radius: 8px;          /* rectangle arrondi */
+  min-width: 42px;
+  text-align: center;
+  font-family: inherit;
+}
+
+/* Minutes (mode compact) – pastilles discrets */
+.countdown-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.countdown-strip .cd {
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: #555;               /* minutes suivantes atténuées */
+  font-weight: 400;
+}
+.countdown-strip .cd.first {
+  color: #000;               /* prochain départ en noir gras */
+  font-weight: 700;
+}
+
+/* Mode développé */
 .destination-title {
-  font-size: 1.2rem;
-  font-weight: bold;
-  margin-top: 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 10px 0 6px 0;
 }
-
-/* Liste des départs */
 .departure-times {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 .departure-item {
-  background: #eee;
-  padding: 5px 10px;
-  border-radius: 5px;
-  font-size: 1rem;
+  background: #eef2ff;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 0.98rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
+.departure-item .late { color: #eb0000; }
 
-/* Plein écran : cache les boutons, active un layout robuste, scroll sans barre visible */
+/* Etat visuel */
+.line-card.compact .departure-times { display: none; }
+
+/* Plein écran */
 body.fullscreen #toggle-filter,
-body.fullscreen #fullscreen-toggle {
-  display: none;
-}
+body.fullscreen #fullscreen-toggle { display: none; }
 body.fullscreen {
   height: 100vh;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  -ms-overflow-style: none;     /* IE/Edge */
-  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 body.fullscreen::-webkit-scrollbar { display: none; }
 
-body.fullscreen #departures {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  grid-auto-rows: auto;
-  gap: 12px;
-  align-content: start;
-  column-count: initial;
-  column-gap: initial;
-  flex-grow: 1;
-  height: auto;
-}
-
-body.fullscreen .line-card { min-height: 0; }
-body.fullscreen .line-title { font-size: 1.2em; }
-body.fullscreen .destination-title,
-body.fullscreen .departure-times { font-size: 0.9em; }
-
-/* --- Règles ajoutées pour hauteur égale dans la barre --- */
-#control-bar .filter-container { display: flex; align-items: stretch; }
-#control-bar #toggle-filter { margin: 0; height: 100%; }
-#last-update { margin: 0; } /* évite toute marge par défaut du <p> */
-
-/* --- Modal filtre plein écran + flou --- */
+/* Modal filtre */
 body.filters-open::before {
   content: "";
   position: fixed;
@@ -218,20 +269,17 @@ body.filters-open::before {
   -webkit-backdrop-filter: blur(4px);
   z-index: 1000;
 }
-
 #line-filter-box.modal-open {
   position: fixed;
   inset: 6vh 6vw;
   max-height: 88vh;
   overflow: auto;
   background: #fff;
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0,0,0,.2);
   padding: 16px;
   z-index: 1001;
 }
-
-/* Bouton de fermeture dans la modal */
 #filter-close {
   position: sticky;
   top: 0;
@@ -250,3 +298,41 @@ body.filters-open::before {
   z-index: 1;
 }
 #filter-close:hover { color: #555; }
+
+/* Thermomètre */
+#thermo-container {
+  display: none;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+  padding: 12px;
+}
+#thermo-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+#thermo-back {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.thermo-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+.thermo-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 150px;
+}
+.thermo-stop {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

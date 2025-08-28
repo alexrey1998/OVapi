@@ -8,32 +8,33 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#007bff">
+<link rel="stylesheet" href="style.css">
 
 <!-- Favicons pour Firefox et navigateurs desktop -->
 <link rel="icon" type="image/svg+xml" href="icons/logo.svg">
 <link rel="icon" sizes="32x32" href="icons/icon-32.png">
 <link rel="icon" sizes="16x16" href="icons/icon-16.png">
-
-<link rel="stylesheet" href="style.css">
-<script type="module" src="script.js"></script>
 </head>
 <body>
-<!-- Bannière d'information affichée lors de la première visite -->
-<div id="banner">
-  <p class="banner-text">Aucune donnée n’est collectée côté serveur. Toutes les données techniquement nécessaires au fonctionnement de la WebApp sont stockées localement sur votre appareil et sont inaccessibles au développeur.</p>
-  <p class="banner-text">Cliquez sur le nom de l'arrêt affiché en haut pour le modifier.</p>
-  <button id="banner-close">×</button>
-</div>
 
-<!-- Titre : le nom de l'arrêt est injecté par le script et est éditable -->
-<h1 id="stop-name" contenteditable="true">Entrez le nom de l'arrêt ici</h1>
+<h1 id="stop-name" contenteditable="true" spellcheck="false">Entrez le nom de l'arrêt ici</h1>
+
 <!-- Suggestions pour le nom de l'arrêt -->
 <div id="stop-suggestions"></div>
 
-<!-- Barre de contrôle regroupant la dernière mise à jour, le bouton plein écran et le filtre de lignes -->
+<!-- Barre de contrôle regroupant la mise à jour, les actions et le filtre -->
 <div id="control-bar">
-  <p id="last-update">Dernière mise à jour: <span id="update-time">-</span></p>
+  <p id="last-update">
+    <span>Màj : <span id="update-time">-</span></span>
+    <span id="quick-actions">
+      <button id="btn-gps" aria-label="Mettre à jour la position" title="Mettre à jour la position">📍</button>
+      <button id="btn-refresh" aria-label="Recharger les départs" title="Recharger les départs">↻</button>
+      <button id="btn-toggle-nearby" aria-label="Basculer 1er/2e arrêt" title="Basculer 1er/2e arrêt">⇄</button>
+    </span>
+  </p>
+
   <button id="fullscreen-toggle">Plein écran ↗️</button>
+
   <div class="filter-container">
     <button id="toggle-filter">Filtres de lignes</button>
     <div id="line-filter-box" class="hidden"></div>
@@ -43,6 +44,9 @@
 <!-- Conteneur des départs -->
 <div id="departures"></div>
 
+<!-- Thermomètre de ligne -->
+<div id="thermo-container" class="hidden"></div>
+
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -50,5 +54,6 @@
     });
   }
 </script>
+<script type="module" src="script.js"></script>
 </body>
 </html>
