@@ -1,11 +1,14 @@
-// sw.js — cache avec stale-while-revalidate pour CSS et JS, sans versionnage d’URL
-const CACHE_VERSION = "tplive-v5";
+// sw.js — retour à une stratégie sans mise à jour automatique du CSS (cache-first)
+const CACHE_VERSION = "tplive-static-v1";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 
-// Précache minimal (pas de CSS/JS pour permettre la revalidation)
 const PRECACHE = [
   "/",
   "/index.html",
+  "/style.css",
+  "/script.js",
+  "/settings.js",
+  "/colors.js",
   "/manifest.json",
   "/icons/icon-16.png",
   "/icons/icon-32.png",
@@ -39,81 +42,41 @@ self.addEventListener("fetch", (event) => {
   // Laisser passer les requêtes externes (API opendata.ch, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // Pages HTML (navigations): network-first
+  // Navigations: network-first avec repli cache pour fonctionnement hors-ligne
   if (req.mode === "navigate") {
     event.respondWith(networkFirst(req));
     return;
   }
 
-  // CSS: stale-while-revalidate
-  if (req.destination === "style" || url.pathname.endsWith("/style.css")) {
-    event.respondWith(staleWhileRevalidate(req));
-    return;
-  }
-
-  // JS applicatif: stale-while-revalidate
-  if (
-    req.destination === "script" &&
-    (url.pathname.endsWith("/script.js") ||
-     url.pathname.endsWith("/settings.js") ||
-     url.pathname.endsWith("/colors.js"))
-  ) {
-    event.respondWith(staleWhileRevalidate(req));
-    return;
-  }
-
-  // Images/icônes: cache-first
-  if (req.destination === "image" || url.pathname.startsWith("/icons/")) {
-    event.respondWith(cacheFirst(req));
-    return;
-  }
-
-  // Par défaut: network-first
-  event.respondWith(networkFirst(req));
+  // Tous les autres assets du site (CSS, JS, images, CSV, manifest): cache-first
+  event.respondWith(cacheFirst(req));
 });
 
-/* ----- Strategies ----- */
-async function cachePut(req, res) {
-  try {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.put(req, res.clone());
-  } catch (_) {}
-}
-
-async function staleWhileRevalidate(req) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(req);
-  const fetchPromise = fetch(req)
-    .then((res) => {
-      if (res && res.ok) cachePut(req, res);
-      return res;
-    })
-    .catch(() => null);
-  return cached || fetchPromise || fetch(req);
-}
-
-async function networkFirst(req) {
-  try {
-    const res = await fetch(req);
-    if (res && res.ok) cachePut(req, res);
-    return res;
-  } catch (_) {
-    const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(req);
-    if (cached) return cached;
-    if (req.mode === "navigate") {
-      const root = await cache.match("/");
-      if (root) return root;
-    }
-    throw _;
-  }
-}
-
+/* ---- stratégies ---- */
 async function cacheFirst(req) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(req);
   if (cached) return cached;
   const res = await fetch(req);
-  if (res && res.ok) cachePut(req, res);
+  if (res && res.ok) cache.put(req, res.clone());
   return res;
 }
+
+async function networkFirst(req) {
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(req, res.clone());
+    }
+    return res;
+  } catch (_) {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    const root = await cache.match("/");
+    if (root) return root;
+    throw _;
+  }
+}
+```0
