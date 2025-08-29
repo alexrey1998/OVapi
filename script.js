@@ -126,10 +126,10 @@ document.addEventListener("DOMContentLoaded", () => {
   let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || "Entrez le nom de l'arrêt ici") : "Entrez le nom de l'arrêt ici";
   if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
   let currentSuggestionIndex = -1;
-  let userLocation = null;
+  let userLocation = null; // { lat, lon, accuracy? }
   let selectedLines = new Set();
   let expandedLineKey = null;
-  let lastNearbySuggestions = [];     // liste issue de fetchSuggestionsByLocation (objets API, utilisés par Swipe)
+  let lastNearbySuggestions = [];     // [{ name, d }], trié par d ASC
 
   // Quick-actions
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
@@ -148,7 +148,7 @@ document.addEventListener("DOMContentLoaded", () => {
           fetchDepartures();
         }
       });
-    });
+    }, true); // frais, pas de watch ici
   });
 
   document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
@@ -182,7 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (userLocation && stopNameEl.textContent.trim() === "") {
           fetchSuggestionsByLocation(userLocation.lon, userLocation.lat);
         }
-      });
+      }); // position suffisante pour l'autocomplétion
       this.focus();
     });
 
@@ -246,36 +246,35 @@ document.addEventListener("DOMContentLoaded", () => {
     items.forEach((el, idx) => el.classList.toggle("selected", idx === currentSuggestionIndex));
   }
 
-  /* ===== Ancienne logique corrigée: suggestions par géoloc, tri local fiable ===== */
+  /* ===== Suggestions par géoloc triées par distance API (fallback Haversine) ===== */
   function hasValidCoord(s) {
-    return s && s.coordinate && typeof s.coordinate.y === "number" && typeof s.coordinate.x === "number" &&
-           Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
+    return s && s.coordinate && Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
   }
   function fetchSuggestionsByLocation(lon, lat, callback) {
-    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
+    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}&type=station`;
     fetch(url)
       .then(r => r.json())
       .then(data => {
-        const stations = data.stations || [];
-        const filtered = stations.filter(s => (!s.type || s.type.toLowerCase() === "station") && hasValidCoord(s));
-        const suggestions = filtered
-          .sort((a, b) => {
-            // Latitude = coordinate.y, Longitude = coordinate.x
-            const d1 = computeDistance(lat, lon, a.coordinate.y, a.coordinate.x);
-            const d2 = computeDistance(lat, lon, b.coordinate.y, b.coordinate.x);
-            return d1 - d2;
+        const stations = (data.stations || [])
+          .filter(s => (!s.type || s.type.toLowerCase() === "station") && (Number.isFinite(s.distance) || hasValidCoord(s)))
+          .map(s => {
+            const d = Number.isFinite(s.distance)
+              ? Number(s.distance)
+              : computeDistance(lat, lon, s.coordinate.y, s.coordinate.x) * 1000;
+            return { name: s.name, d };
           })
+          .sort((a, b) => a.d - b.d)
           .slice(0, 5);
 
-        lastNearbySuggestions = suggestions;
+        lastNearbySuggestions = stations;
 
         if (document.activeElement === stopNameEl && stopNameEl.textContent.trim() === "") {
-          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${s.name}</div>`).join("");
+          suggestionsContainer.innerHTML = stations.map(s => `<div>${s.name}</div>`).join("");
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div").forEach((el, index) => {
             el.addEventListener("mousedown", function() {
-              const chosenName = suggestions[index].name;
+              const chosenName = stations[index].name;
               STOP_NAME = chosenName;
               stopNameEl.innerHTML = formatStopNameHTML(chosenName);
               selectedLines.clear();
@@ -290,7 +289,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
           });
         }
-        if (typeof callback === "function") callback(suggestions);
+        if (typeof callback === "function") callback(stations);
       })
       .catch(err => {
         console.error("Erreur suggestions géoloc", err);
@@ -303,15 +302,16 @@ document.addEventListener("DOMContentLoaded", () => {
     fetch(url)
       .then(r => r.json())
       .then(data => {
-        const stations = data.stations || [];
-        const suggestions = stations.filter(s => !s.type || s.type.toLowerCase() === "station").slice(0, 5);
-        if (suggestions.length > 0) {
-          suggestionsContainer.innerHTML = suggestions.map(s => `<div>${s.name}</div>`).join("");
+        const stations = (data.stations || [])
+          .filter(s => !s.type || s.type.toLowerCase() === "station")
+          .slice(0, 5);
+        if (stations.length > 0) {
+          suggestionsContainer.innerHTML = stations.map(s => `<div>${s.name}</div>`).join("");
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div").forEach((el, index) => {
             el.addEventListener("mousedown", function() {
-              const chosenName = suggestions[index].name;
+              const chosenName = stations[index].name;
               STOP_NAME = chosenName;
               stopNameEl.innerHTML = formatStopNameHTML(chosenName);
               selectedLines.clear();
@@ -334,12 +334,70 @@ document.addEventListener("DOMContentLoaded", () => {
       .catch(err => console.error("Erreur suggestions", err));
   }
 
-  // Géoloc (comme avant)
-  function updateUserLocation(cb) {
+  /* ===== Géoloc fraîche + amélioration par watch (au démarrage) ===== */
+  function updateUserLocation(cb, opts = false) {
     if (!navigator.geolocation) { if (cb) cb(); return; }
+
+    // Compat: bool => fresh
+    let fresh = false, withWatch = false;
+    if (typeof opts === "boolean") {
+      fresh = opts;
+    } else if (opts && typeof opts === "object") {
+      fresh = !!opts.fresh;
+      withWatch = !!opts.withWatch;
+    }
+
+    let done = false;
+    const finishOnce = () => { if (!done) { done = true; cb && cb(); } };
+
     navigator.geolocation.getCurrentPosition(
-      pos => { userLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude }; cb && cb(); },
-      err => { console.error("Erreur GPS", err); cb && cb(); }
+      pos => {
+        userLocation = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        };
+
+        if (!withWatch) { finishOnce(); return; }
+
+        // Amélioration par watch: on garde la meilleure accuracy, arrêt si ≤ 50 m ou timeout atteint
+        let bestAcc = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : Infinity;
+        let watchId = null;
+        const stopWatch = () => {
+          if (watchId !== null) {
+            navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+          }
+        };
+
+        const timeoutId = setTimeout(() => {
+          stopWatch();
+          finishOnce();
+        }, 15000);
+
+        watchId = navigator.geolocation.watchPosition(
+          p => {
+            const acc = Number.isFinite(p.coords.accuracy) ? p.coords.accuracy : Infinity;
+            if (acc < bestAcc) {
+              bestAcc = acc;
+              userLocation = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: acc };
+            }
+            if (bestAcc <= 50) {
+              clearTimeout(timeoutId);
+              stopWatch();
+              finishOnce();
+            }
+          },
+          _err => {
+            clearTimeout(timeoutId);
+            stopWatch();
+            finishOnce();
+          },
+          { enableHighAccuracy: true, maximumAge: 0 }
+        );
+      },
+      _err => { finishOnce(); },
+      { enableHighAccuracy: true, maximumAge: fresh ? 0 : 15000, timeout: 8000 }
     );
   }
 
@@ -524,7 +582,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const schedMs = new Date(dep.stop?.departure).getTime();
       const delayMin = Number(dep.stop?.delay || 0);
-      const effMs = Number.isFinite(schedMs) ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0) : NaN;
+      const effMs = Number.isFinite(schedMs)
+  ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0)
+  : NaN;
       const remaining = Number.isFinite(effMs) ? Math.max(0, Math.round((effMs - nowMs) / 60000)) : null;
 
       if (Number.isFinite(effMs) && (effMs - nowMs) <= DISPLAY_WINDOW_MS) {
@@ -716,7 +776,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Démarrage — reprendre l’ancienne sélection: premier des 5 plus proches ayant des départs
+  // Démarrage — frais + watch pour meilleure précision avant de choisir l'arrêt
   (async () => {
     if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
       updateUserLocation(function() {
@@ -737,7 +797,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           });
         }
-      });
+      }, { fresh: true, withWatch: true });
     } else {
       fetchDepartures();
     }
