@@ -73,7 +73,7 @@ function adjustLineBadgePadding(el) {
     const font = `${cs.fontStyle || "normal"} ${cs.fontVariant || "normal"} ${cs.fontWeight || "700"} ${cs.fontSize || "22px"} ${cs.fontFamily || "Arial"}`;
     __badgeCtx.font = font;
     const w = __badgeCtx.measureText(text).width;
-    const base = 10;                           // padding min par côté
+    const base = 10;
     const extra = Math.max(0, Math.min(24, Math.round(w * 0.15)));
     const pad = base + extra;
     el.style.paddingLeft = pad + "px";
@@ -129,7 +129,10 @@ document.addEventListener("DOMContentLoaded", () => {
   let userLocation = null; // { lat, lon, accuracy? }
   let selectedLines = new Set();
   let expandedLineKey = null;
-  let lastNearbySuggestions = [];     // [{ name, d }], trié par d ASC
+
+  // Listes proches
+  let nearbyRaw = [];   // résultats complets de /locations triés par distance
+  let nearbyStops = []; // seulement stations avec id, triées par distance
 
   // Quick-actions
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
@@ -137,11 +140,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-gps")?.addEventListener("click", () => {
     updateUserLocation(() => {
       if (!userLocation) return;
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, (suggestions) => {
-        lastNearbySuggestions = suggestions || [];
-        if (lastNearbySuggestions.length > 0) {
-          const sel = lastNearbySuggestions[0];
-          STOP_NAME = sel.name;
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
+        if (nearbyStops.length > 0) {
+          STOP_NAME = nearbyStops[0].name;
           if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
           selectedLines.clear();
           expandedLineKey = null;
@@ -153,9 +154,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
     const applyToggle = () => {
-      if (lastNearbySuggestions.length < 2) return;
-      const first = lastNearbySuggestions[0]?.name;
-      const second = lastNearbySuggestions[1]?.name;
+      if (nearbyStops.length < 2) return;
+      const first = nearbyStops[0]?.name;
+      const second = nearbyStops[1]?.name;
       if (!first || !second) return;
       STOP_NAME = (STOP_NAME === first) ? second : first;
       if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
@@ -163,13 +164,10 @@ document.addEventListener("DOMContentLoaded", () => {
       expandedLineKey = null;
       fetchDepartures();
     };
-    if (lastNearbySuggestions.length >= 2) {
+    if (nearbyStops.length >= 2) {
       applyToggle();
     } else if (userLocation) {
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, (s) => {
-        lastNearbySuggestions = s || [];
-        applyToggle();
-      });
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, applyToggle);
     }
   });
 
@@ -180,7 +178,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (plain.trim() !== "") stopNameEl.textContent = "";
       updateUserLocation(function() {
         if (userLocation && stopNameEl.textContent.trim() === "") {
-          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat);
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
+            // Affiche seulement nearbyStops dans la liste
+            showNearbyStopsSuggestions();
+          });
         }
       }); // position suffisante pour l'autocomplétion
       this.focus();
@@ -193,7 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
         fetchSuggestions(q);
       } else {
         if (userLocation) {
-          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat);
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, showNearbyStopsSuggestions);
         } else {
           suggestionsContainer.innerHTML = "";
           suggestionsContainer.style.display = "none";
@@ -202,7 +203,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     stopNameEl.addEventListener("keydown", function(e) {
-      const items = suggestionsContainer.querySelectorAll("div");
+      const items = suggestionsContainer.querySelectorAll("div[data-name]");
       if (e.key === "ArrowDown") {
         e.preventDefault();
         if (items.length > 0) { currentSuggestionIndex = (currentSuggestionIndex + 1) % items.length; updateSuggestionHighlight(); }
@@ -213,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         if (items.length > 0) {
           if (currentSuggestionIndex === -1) { currentSuggestionIndex = 0; updateSuggestionHighlight(); }
-          const chosenName = items[currentSuggestionIndex].textContent;
+          const chosenName = items[currentSuggestionIndex].getAttribute("data-name");
           STOP_NAME = chosenName;
           stopNameEl.innerHTML = formatStopNameHTML(chosenName);
           selectedLines.clear();
@@ -242,76 +243,92 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateSuggestionHighlight() {
-    const items = suggestionsContainer.querySelectorAll("div");
+    const items = suggestionsContainer.querySelectorAll("div[data-name]");
     items.forEach((el, idx) => el.classList.toggle("selected", idx === currentSuggestionIndex));
   }
 
-  /* ===== Suggestions par géoloc triées par distance API (fallback Haversine) ===== */
+  function showNearbyStopsSuggestions() {
+    if (document.activeElement !== stopNameEl || stopNameEl.textContent.trim() !== "") return;
+    if (!nearbyStops.length) {
+      suggestionsContainer.innerHTML = "";
+      suggestionsContainer.style.display = "none";
+      return;
+    }
+    suggestionsContainer.innerHTML = nearbyStops.slice(0, 5).map(s =>
+      `<div data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`
+    ).join("");
+    suggestionsContainer.style.display = "block";
+    currentSuggestionIndex = -1;
+    suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
+      el.addEventListener("mousedown", () => {
+        const chosenName = el.getAttribute("data-name");
+        STOP_NAME = chosenName;
+        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosenName);
+        selectedLines.clear();
+        suggestionsContainer.innerHTML = "";
+        suggestionsContainer.style.display = "none";
+        currentSuggestionIndex = -1;
+        fetchDepartures();
+      });
+    });
+  }
+
+  /* ===== Suggestions géolocalisées: on garde tout en raw, et on publie seulement les stations ===== */
   function hasValidCoord(s) {
     return s && s.coordinate && Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
   }
   function fetchSuggestionsByLocation(lon, lat, callback) {
-    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}&type=station`;
+    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
     fetch(url)
       .then(r => r.json())
       .then(data => {
-        const stations = (data.stations || [])
-          .filter(s => (!s.type || s.type.toLowerCase() === "station") && (Number.isFinite(s.distance) || hasValidCoord(s)))
+        const list = Array.isArray(data.stations) ? data.stations : [];
+        // enrichi avec distance
+        const enriched = list
+          .filter(s => hasValidCoord(s) || Number.isFinite(s.distance))
           .map(s => {
             const d = Number.isFinite(s.distance)
               ? Number(s.distance)
               : computeDistance(lat, lon, s.coordinate.y, s.coordinate.x) * 1000;
-            return { name: s.name, d };
+            return {
+              id: s.id ?? null,
+              type: (s.type || "").toLowerCase() || null,
+              name: s.name,
+              d
+            };
           })
-          .sort((a, b) => a.d - b.d)
-          .slice(0, 5);
+          .sort((a, b) => a.d - b.d);
 
-        lastNearbySuggestions = stations;
+        nearbyRaw = enriched;
 
-        if (document.activeElement === stopNameEl && stopNameEl.textContent.trim() === "") {
-          suggestionsContainer.innerHTML = stations.map(s => `<div>${s.name}</div>`).join("");
-          suggestionsContainer.style.display = "block";
-          currentSuggestionIndex = -1;
-          suggestionsContainer.querySelectorAll("div").forEach((el, index) => {
-            el.addEventListener("mousedown", function() {
-              const chosenName = stations[index].name;
-              STOP_NAME = chosenName;
-              stopNameEl.innerHTML = formatStopNameHTML(chosenName);
-              selectedLines.clear();
-              suggestionsContainer.innerHTML = "";
-              suggestionsContainer.style.display = "none";
-              currentSuggestionIndex = -1;
-              fetchDepartures();
-            });
-            el.addEventListener("mouseover", function() {
-              currentSuggestionIndex = index;
-              updateSuggestionHighlight();
-            });
-          });
-        }
-        if (typeof callback === "function") callback(stations);
+        // publier uniquement les vraies stations avec id
+        nearbyStops = enriched.filter(e => e.id && (!e.type || e.type === "station"));
+
+        if (typeof callback === "function") callback();
       })
       .catch(err => {
         console.error("Erreur suggestions géoloc", err);
-        if (typeof callback === "function") callback([]);
+        nearbyRaw = [];
+        nearbyStops = [];
+        if (typeof callback === "function") callback();
       });
   }
 
   function fetchSuggestions(query) {
-    const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}`;
+    const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}&type=station`;
     fetch(url)
       .then(r => r.json())
       .then(data => {
         const stations = (data.stations || [])
-          .filter(s => !s.type || s.type.toLowerCase() === "station")
-          .slice(0, 5);
+          .filter(s => s.id) // seulement stations valides
+          .slice(0, 8);
         if (stations.length > 0) {
-          suggestionsContainer.innerHTML = stations.map(s => `<div>${s.name}</div>`).join("");
+          suggestionsContainer.innerHTML = stations.map(s => `<div data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`).join("");
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
-          suggestionsContainer.querySelectorAll("div").forEach((el, index) => {
+          suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
             el.addEventListener("mousedown", function() {
-              const chosenName = stations[index].name;
+              const chosenName = el.getAttribute("data-name");
               STOP_NAME = chosenName;
               stopNameEl.innerHTML = formatStopNameHTML(chosenName);
               selectedLines.clear();
@@ -319,10 +336,6 @@ document.addEventListener("DOMContentLoaded", () => {
               suggestionsContainer.style.display = "none";
               currentSuggestionIndex = -1;
               fetchDepartures();
-            });
-            el.addEventListener("mouseover", function() {
-              currentSuggestionIndex = index;
-              updateSuggestionHighlight();
             });
           });
         } else {
@@ -338,7 +351,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateUserLocation(cb, opts = false) {
     if (!navigator.geolocation) { if (cb) cb(); return; }
 
-    // Compat: bool => fresh
     let fresh = false, withWatch = false;
     if (typeof opts === "boolean") {
       fresh = opts;
@@ -360,7 +372,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!withWatch) { finishOnce(); return; }
 
-        // Amélioration par watch: on garde la meilleure accuracy, arrêt si ≤ 50 m ou timeout atteint
         let bestAcc = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : Infinity;
         let watchId = null;
         const stopWatch = () => {
@@ -434,7 +445,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return departures.some(dep => {
         const sched = new Date(dep.stop?.departure).getTime();
         const delay = Number(dep.stop?.delay || 0);
-        const eff = sched + (Number.isFinite(delay) ? delay * 60000 : 0);
+        const eff = Number.isFinite(sched) ? sched + (Number.isFinite(delay) ? delay * 60000 : 0) : NaN;
         return Number.isFinite(eff) && (eff - now) <= DISPLAY_WINDOW_MS;
       });
     } catch {
@@ -582,9 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const schedMs = new Date(dep.stop?.departure).getTime();
       const delayMin = Number(dep.stop?.delay || 0);
-      const effMs = Number.isFinite(schedMs)
-  ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0)
-  : NaN;
+      const effMs = Number.isFinite(schedMs) ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0) : NaN;
       const remaining = Number.isFinite(effMs) ? Math.max(0, Math.round((effMs - nowMs) / 60000)) : null;
 
       if (Number.isFinite(effMs) && (effMs - nowMs) <= DISPLAY_WINDOW_MS) {
@@ -657,7 +666,7 @@ document.addEventListener("DOMContentLoaded", () => {
           destDiv.innerHTML = formatStopNameHTML(displayDest) + escapeHtml(suffixAirport);
           card.appendChild(destDiv);
 
-          const list = document.createElement("div");
+        const list = document.createElement("div");
           list.className = "departure-times";
           list.innerHTML = times.slice(0, 5).map(o => {
             let delayStr = "";
@@ -776,20 +785,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Démarrage — frais + watch pour meilleure précision avant de choisir l'arrêt
+  // Démarrage — frais + watch; H1 = 1er vrai arrêt (nearbyStops[0]); Swipe = [0]↔[1]
   (async () => {
     if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
       updateUserLocation(function() {
         if (userLocation) {
-          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async function(suggestions) {
-            lastNearbySuggestions = suggestions || [];
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async function() {
+            // Choisir le premier des 5 "vrais arrêts" ayant des départs
             let chosen = null;
-            for (let i = 0; i < Math.min(5, lastNearbySuggestions.length); i++) {
-              const candidate = lastNearbySuggestions[i].name;
+            for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
+              const candidate = nearbyStops[i].name;
               const ok = await checkDeparturesForStop(candidate);
               if (ok) { chosen = candidate; break; }
             }
-            if (!chosen && lastNearbySuggestions.length > 0) chosen = lastNearbySuggestions[0].name;
+            if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
             if (chosen) {
               STOP_NAME = chosen;
               if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
