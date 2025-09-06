@@ -1,3 +1,4 @@
+// script.js
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -130,6 +131,30 @@ document.addEventListener("DOMContentLoaded", () => {
   let selectedLines = new Set();
   let expandedLineKey = null;
 
+  // Anti-écrasement H1 par la géoloc auto
+  let autoFillAllowed = true;
+
+  // Cache position
+  const LAST_FIX_KEY = "lastPositionFix.v1";
+  function saveLastFix(loc) {
+    try {
+      if (!loc) return;
+      localStorage.setItem(LAST_FIX_KEY, JSON.stringify({
+        lat: loc.lat, lon: loc.lon, accuracy: loc.accuracy ?? null, t: Date.now()
+      }));
+    } catch {}
+  }
+  function loadLastFix(maxAgeMs = 5 * 60 * 1000) {
+    try {
+      const raw = localStorage.getItem(LAST_FIX_KEY);
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      if (!Number.isFinite(o?.lat) || !Number.isFinite(o?.lon)) return null;
+      if (!Number.isFinite(o?.t) || (Date.now() - o.t) > maxAgeMs) return null;
+      return { lat: o.lat, lon: o.lon, accuracy: o.accuracy ?? null };
+    } catch { return null; }
+  }
+
   // Listes proches
   let nearbyRaw = [];   // résultats complets de /locations triés par distance
   let nearbyStops = []; // seulement stations avec id, triées par distance
@@ -146,6 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
           selectedLines.clear();
           expandedLineKey = null;
+          try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
           fetchDepartures();
         }
       });
@@ -162,6 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
       selectedLines.clear();
       expandedLineKey = null;
+      try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
       fetchDepartures();
     };
     if (nearbyStops.length >= 2) {
@@ -179,7 +206,6 @@ document.addEventListener("DOMContentLoaded", () => {
       updateUserLocation(function() {
         if (userLocation && stopNameEl.textContent.trim() === "") {
           fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
-            // Affiche seulement nearbyStops dans la liste
             showNearbyStopsSuggestions();
           });
         }
@@ -189,6 +215,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     stopNameEl.addEventListener("input", function() {
       currentSuggestionIndex = -1;
+      autoFillAllowed = false; // l'utilisateur saisit → ne pas écraser H1
       const q = this.textContent.trim();
       if (q.length > 0) {
         fetchSuggestions(q);
@@ -221,6 +248,8 @@ document.addEventListener("DOMContentLoaded", () => {
           suggestionsContainer.innerHTML = "";
           suggestionsContainer.style.display = "none";
           currentSuggestionIndex = -1;
+          autoFillAllowed = false;
+          try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
           fetchDepartures();
           stopNameEl.blur();
         } else {
@@ -235,10 +264,15 @@ document.addEventListener("DOMContentLoaded", () => {
         suggestionsContainer.style.display = "none";
         currentSuggestionIndex = -1;
       }, 200);
-      STOP_NAME = this.textContent.trim();
-      stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-      selectedLines.clear();
-      fetchDepartures();
+      const val = this.textContent.trim();
+      if (val) {
+        STOP_NAME = val;
+        stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+        selectedLines.clear();
+        autoFillAllowed = false;
+        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+        fetchDepartures();
+      }
     });
   }
 
@@ -268,12 +302,14 @@ document.addEventListener("DOMContentLoaded", () => {
         suggestionsContainer.innerHTML = "";
         suggestionsContainer.style.display = "none";
         currentSuggestionIndex = -1;
+        autoFillAllowed = false;
+        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
         fetchDepartures();
       });
     });
   }
 
-  /* ===== Suggestions géolocalisées: on garde tout en raw, et on publie seulement les stations ===== */
+  /* ===== Suggestions géolocalisées ===== */
   function hasValidCoord(s) {
     return s && s.coordinate && Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
   }
@@ -283,27 +319,18 @@ document.addEventListener("DOMContentLoaded", () => {
       .then(r => r.json())
       .then(data => {
         const list = Array.isArray(data.stations) ? data.stations : [];
-        // enrichi avec distance
         const enriched = list
           .filter(s => hasValidCoord(s) || Number.isFinite(s.distance))
           .map(s => {
             const d = Number.isFinite(s.distance)
               ? Number(s.distance)
               : computeDistance(lat, lon, s.coordinate.y, s.coordinate.x) * 1000;
-            return {
-              id: s.id ?? null,
-              type: (s.type || "").toLowerCase() || null,
-              name: s.name,
-              d
-            };
+            return { id: s.id ?? null, type: (s.type || "").toLowerCase() || null, name: s.name, d };
           })
           .sort((a, b) => a.d - b.d);
 
         nearbyRaw = enriched;
-
-        // publier uniquement les vraies stations avec id
         nearbyStops = enriched.filter(e => e.id && (!e.type || e.type === "station"));
-
         if (typeof callback === "function") callback();
       })
       .catch(err => {
@@ -320,7 +347,7 @@ document.addEventListener("DOMContentLoaded", () => {
       .then(r => r.json())
       .then(data => {
         const stations = (data.stations || [])
-          .filter(s => s.id) // seulement stations valides
+          .filter(s => s.id)
           .slice(0, 8);
         if (stations.length > 0) {
           suggestionsContainer.innerHTML = stations.map(s => `<div data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`).join("");
@@ -335,6 +362,8 @@ document.addEventListener("DOMContentLoaded", () => {
               suggestionsContainer.innerHTML = "";
               suggestionsContainer.style.display = "none";
               currentSuggestionIndex = -1;
+              autoFillAllowed = false;
+              try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
               fetchDepartures();
             });
           });
@@ -361,6 +390,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let done = false;
     const finishOnce = () => { if (!done) { done = true; cb && cb(); } };
+    const finalize = () => { try { if (userLocation) saveLastFix(userLocation); } catch {} finishOnce(); };
 
     navigator.geolocation.getCurrentPosition(
       pos => {
@@ -370,7 +400,7 @@ document.addEventListener("DOMContentLoaded", () => {
           accuracy: pos.coords.accuracy
         };
 
-        if (!withWatch) { finishOnce(); return; }
+        if (!withWatch) { finalize(); return; }
 
         let bestAcc = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : Infinity;
         let watchId = null;
@@ -383,8 +413,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const timeoutId = setTimeout(() => {
           stopWatch();
-          finishOnce();
-        }, 15000);
+          finalize();
+        }, 8000); // réduit de 15000ms → 8000ms
 
         watchId = navigator.geolocation.watchPosition(
           p => {
@@ -396,18 +426,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (bestAcc <= 50) {
               clearTimeout(timeoutId);
               stopWatch();
-              finishOnce();
+              finalize();
             }
           },
           _err => {
             clearTimeout(timeoutId);
             stopWatch();
-            finishOnce();
+            finalize();
           },
           { enableHighAccuracy: true, maximumAge: 0 }
         );
       },
-      _err => { finishOnce(); },
+      _err => { finalize(); },
       { enableHighAccuracy: true, maximumAge: fresh ? 0 : 15000, timeout: 8000 }
     );
   }
@@ -666,7 +696,7 @@ document.addEventListener("DOMContentLoaded", () => {
           destDiv.innerHTML = formatStopNameHTML(displayDest) + escapeHtml(suffixAirport);
           card.appendChild(destDiv);
 
-        const list = document.createElement("div");
+          const list = document.createElement("div");
           list.className = "departure-times";
           list.innerHTML = times.slice(0, 5).map(o => {
             let delayStr = "";
@@ -785,13 +815,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Démarrage — frais + watch; H1 = 1er vrai arrêt (nearbyStops[0]); Swipe = [0]↔[1]
+  // Démarrage — frais + watch; H1 auto seulement si encore vide
   (async () => {
+    // Amorçage suggestions via cache position (ne touche pas H1)
+    const cached = loadLastFix();
+    if (cached) {
+      fetchSuggestionsByLocation(cached.lon, cached.lat, () => {
+        // uniquement pour remplir nearbyStops rapidement
+      });
+    }
+
     if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
       updateUserLocation(function() {
         if (userLocation) {
           fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async function() {
-            // Choisir le premier des 5 "vrais arrêts" ayant des départs
+            // 1er des 5 vrais arrêts ayant des départs
             let chosen = null;
             for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
               const candidate = nearbyStops[i].name;
@@ -799,7 +837,9 @@ document.addEventListener("DOMContentLoaded", () => {
               if (ok) { chosen = candidate; break; }
             }
             if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
-            if (chosen) {
+
+            // Ne pas écraser si l'utilisateur a saisi entre-temps
+            if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
               STOP_NAME = chosen;
               if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
               fetchDepartures();
