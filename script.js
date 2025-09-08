@@ -62,6 +62,18 @@ function computeDistance(lat1, lon1, lat2, lon2) {
     Math.sin(dLon/2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+/* Canonicalisation lignes/destinations */
+function canonicalLineKeyFromCatNum(cat, num) {
+  const c = String(cat ?? "").trim();
+  const n = String(num ?? "").trim();
+  return (c + (n ? " " + n : "")).trim();
+}
+function canonicalLineKeyFromDep(dep) {
+  return canonicalLineKeyFromCatNum(dep?.category, dep?.number);
+}
+function normalizeDestName(s) {
+  return String(s ?? "").replace(/\s+/g, " ").trim();
+}
 
 /* Mesure de texte pour ajuster le padding horizontal des badges */
 const __badgeCanvas = document.createElement("canvas");
@@ -162,12 +174,37 @@ document.addEventListener("DOMContentLoaded", () => {
   // Quick-actions
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
 
+  // Helper: premier arrêt parmi les N plus proches ayant des départs
+  async function pickFirstNearbyWithDepartures(limit = 5) {
+    const list = nearbyStops.slice(0, limit);
+    for (const s of list) {
+      const ok = await checkDeparturesForStop(s.name);
+      if (ok) return s.name;
+    }
+    return null;
+  }
+  // Helper: prochain arrêt avec départs à partir de STOP_NAME dans la fenêtre des N plus proches
+  async function nextNearbyWithDeparturesFromCurrent(limit = 5) {
+    const names = nearbyStops.slice(0, limit).map(s => s.name);
+    if (names.length === 0) return null;
+    const idx = names.findIndex(n => n.toLowerCase() === String(STOP_NAME).toLowerCase());
+    const order = idx >= 0
+      ? Array.from({ length: names.length - 1 }, (_, i) => names[(idx + 1 + i) % names.length])
+      : names;
+    for (const name of order) {
+      const ok = await checkDeparturesForStop(name);
+      if (ok) return name;
+    }
+    return null;
+  }
+
   document.getElementById("btn-gps")?.addEventListener("click", () => {
     updateUserLocation(() => {
       if (!userLocation) return;
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
-        if (nearbyStops.length > 0) {
-          STOP_NAME = nearbyStops[0].name;
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async () => {
+        const chosen = await pickFirstNearbyWithDepartures(5);
+        if (chosen) {
+          STOP_NAME = chosen;
           if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
           selectedLines.clear();
           expandedLineKey = null;
@@ -178,23 +215,22 @@ document.addEventListener("DOMContentLoaded", () => {
     }, true); // frais, pas de watch ici
   });
 
-  document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
-    const applyToggle = () => {
-      if (nearbyStops.length < 2) return;
-      const first = nearbyStops[0]?.name;
-      const second = nearbyStops[1]?.name;
-      if (!first || !second) return;
-      STOP_NAME = (STOP_NAME === first) ? second : first;
-      if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-      selectedLines.clear();
-      expandedLineKey = null;
-      try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-      fetchDepartures();
+  document.getElementById("btn-toggle-nearby")?.addEventListener("click", async () => {
+    const doToggle = async () => {
+      const chosen = await nextNearbyWithDeparturesFromCurrent(5);
+      if (chosen && chosen !== STOP_NAME) {
+        STOP_NAME = chosen;
+        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+        selectedLines.clear();
+        expandedLineKey = null;
+        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+        fetchDepartures();
+      }
     };
-    if (nearbyStops.length >= 2) {
-      applyToggle();
+    if (nearbyStops.length >= 1) {
+      await doToggle();
     } else if (userLocation) {
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, applyToggle);
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, doToggle);
     }
   });
 
@@ -499,10 +535,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }));
 
-      const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
+      /* === Lignes: canonicalisation et filtres === */
+      const linesSet = new Set();
+      departures.forEach(dep => linesSet.add(canonicalLineKeyFromDep(dep)));
+      const lines = [...linesSet];
       lines.sort((a, b) => {
-        const numA = a.split(" ").pop();
-        const numB = b.split(" ").pop();
+        const numA = a.split(" ").slice(1).join(" ");
+        const numB = b.split(" ").slice(1).join(" ");
         const isNumA = !isNaN(numA);
         const isNumB = !isNaN(numB);
         if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
@@ -611,14 +650,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
 
-    const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
+    const filtered = departures.filter(dep => selectedLines.has(canonicalLineKeyFromDep(dep)));
     const groupedByLine = {};
     const nowMs = Date.now();
 
     filtered.forEach(dep => {
-      const key = `${dep.category || ""} ${dep.number || ""}`;
+      const key = canonicalLineKeyFromDep(dep);
       if (!groupedByLine[key]) groupedByLine[key] = {};
-      const dest = dep.to || "";
+      const dest = normalizeDestName(dep.to || "");
       if (!groupedByLine[key][dest]) groupedByLine[key][dest] = [];
 
       const schedMs = new Date(dep.stop?.departure).getTime();
@@ -640,8 +679,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const sortedLines = Object.entries(groupedByLine).sort(([a], [b]) => {
-      const numA = a.split(" ").pop();
-      const numB = b.split(" ").pop();
+      const numA = a.split(" ").slice(1).join(" ");
+      const numB = b.split(" ").slice(1).join(" ");
       const isNumA = !isNaN(numA);
       const isNumB = !isNaN(numB);
       if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
@@ -651,6 +690,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     for (const [lineKey, destinations] of sortedLines) {
+      // Total après fenêtre et avec plafond 5 par destination
+      const totalTimes = Object.values(destinations).reduce((sum, times) => sum + Math.min(times.length, 5), 0);
+      if (totalTimes === 0) continue;
+
       const [category, ...numParts] = lineKey.split(" ");
       const number = numParts.join(" ").trim();
       let content = "";
@@ -688,7 +731,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (isExpanded) {
         for (const [dest, times] of Object.entries(destinations)) {
-          if (times.length === 0) continue;
+          const trimmedTimes = times.slice(0, 5);
+          if (trimmedTimes.length === 0) continue;
+
           let displayDest = dest;
           let suffixAirport = (displayDest === "Zürich Flughafen" || displayDest === "Genève-Aéroport") ? " ✈" : "";
           const destDiv = document.createElement("div");
@@ -698,7 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const list = document.createElement("div");
           list.className = "departure-times";
-          list.innerHTML = times.slice(0, 5).map(o => {
+          list.innerHTML = trimmedTimes.map(o => {
             let delayStr = "";
             if (o.delay !== null && (o.delay <= -2 || o.delay >= 2)) {
               const d = Math.abs(o.delay);
@@ -726,7 +771,8 @@ document.addEventListener("DOMContentLoaded", () => {
         card.classList.add("compact");
 
         for (const [dest, times] of Object.entries(destinations)) {
-          if (!times.length) continue;
+          const trimmedTimes = times.slice(0, 5);
+          if (!trimmedTimes.length) continue;
 
           const destDiv = document.createElement("div");
           destDiv.className = "destination-title";
@@ -736,7 +782,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const strip = document.createElement("div");
           strip.className = "countdown-strip";
-          const mins = times.map(o => o.minutesLeft).sort((a,b)=>a-b).slice(0,5);
+          const mins = trimmedTimes.map(o => o.minutesLeft).sort((a,b)=>a-b);
           strip.innerHTML = mins.map((m, i) => `<span class="cd${i===0?' first':''}">${m}'</span>`).join("");
           card.appendChild(strip);
         }
@@ -815,7 +861,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Démarrage — frais + watch; H1 auto seulement si encore vide
+  // Démarrage — frais + watch; H1 auto avec fallback si aucun des 5 n'a de départ
   (async () => {
     // Amorçage suggestions via cache position (ne touche pas H1)
     const cached = loadLastFix();
@@ -836,7 +882,7 @@ document.addEventListener("DOMContentLoaded", () => {
               const ok = await checkDeparturesForStop(candidate);
               if (ok) { chosen = candidate; break; }
             }
-            if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
+            if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name; // fallback conservé
 
             // Ne pas écraser si l'utilisateur a saisi entre-temps
             if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
