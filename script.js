@@ -2,6 +2,7 @@
 import { defaultBadgeColor, staticColors, getOperatorColor } from "./colors.js";
 import { settings } from "./settings.js";
 
+/* ---------- Helpers paramétrables ---------- */
 function getInt(val, dflt) {
   const n = Number(val);
   return Number.isFinite(n) && n > 0 ? n : dflt;
@@ -17,7 +18,10 @@ function parseHMStoMs(hms, dfltMs) {
 const DISPLAY_WINDOW_MS = parseHMStoMs(settings.maxDisplayPeriod, 90 * 60 * 1000);
 const REFRESH_MS = parseHMStoMs(settings.refreshInterval, 60 * 1000);
 const STATIONBOARD_LIMIT = getInt(settings.stationboardLimit, 30);
+const PLACEHOLDER = "Entrez le nom de l'arrêt ici";
+let editingStopName = false;
 
+/* ---------- Données Suisses (CSV) ---------- */
 let swissStationsSet = new Set();
 fetch("swiss_stations.csv")
   .then(r => r.text())
@@ -30,6 +34,7 @@ fetch("swiss_stations.csv")
   .catch(e => console.error("Erreur CSV gares suisses", e));
 function isSwissStation(name) { return swissStationsSet.has(name); }
 
+/* ---------- Utilitaires ---------- */
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -60,6 +65,7 @@ function computeDistance(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/* Mesure de texte pour ajuster le padding horizontal des badges */
 const __badgeCanvas = document.createElement("canvas");
 const __badgeCtx = __badgeCanvas.getContext("2d");
 function adjustLineBadgePadding(el) {
@@ -78,7 +84,9 @@ function adjustLineBadgePadding(el) {
   } catch {}
 }
 
+/* ---------- Application ---------- */
 document.addEventListener("DOMContentLoaded", () => {
+  // Bannière
   if (localStorage.getItem("bannerClosed") === "true") {
     const banner = document.getElementById("banner");
     if (banner) banner.style.display = "none";
@@ -93,6 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Eléments
   const stopNameEl = document.getElementById("stop-name");
   const suggestionsContainer = document.getElementById("stop-suggestions");
   const departuresContainer = document.getElementById("departures");
@@ -100,6 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const filterBox = document.getElementById("line-filter-box");
   const toggleFilterBtn = document.getElementById("toggle-filter");
 
+  // Thermomètre
   const thermo = document.getElementById("thermo-container");
   if (thermo) {
     thermo.innerHTML = `
@@ -115,15 +125,100 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || "Entrez le nom de l'arrêt ici") : "Entrez le nom de l'arrêt ici";
-  if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+  // Etat
+  let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || PLACEHOLDER) : PLACEHOLDER;
   let currentSuggestionIndex = -1;
-  let userLocation = null;
+  let userLocation = null; // { lat, lon, accuracy? }
   let selectedLines = new Set();
   let expandedLineKey = null;
 
+  // H1 éditable: entrée/sortie de mode édition + suggestions au focus
+  if (stopNameEl) {
+    stopNameEl.contentEditable = "true";
+    stopNameEl.setAttribute("role", "textbox");
+    stopNameEl.setAttribute("aria-label", "Nom d'arrêt");
+    stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+
+    function enterEditMode() {
+      if (editingStopName) return;
+      editingStopName = true;
+      const raw = stopNameEl.textContent?.trim() || "";
+      stopNameEl.textContent = (raw === PLACEHOLDER) ? "" : raw;
+
+      // placer le caret en fin
+      const sel = window.getSelection();
+      const r = document.createRange();
+      r.selectNodeContents(stopNameEl);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+
+      // Suggestions initiales: proches si dispo
+      if (nearbyStops.length) {
+        suggestionsContainer.innerHTML = nearbyStops.slice(0, 8)
+          .map(s => `<div class="suggestion-item" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}${isSwissStation(s.name) ? " 🇨🇭" : ""}</div>`)
+          .join("");
+        Array.from(suggestionsContainer.children).forEach(el => {
+          el.addEventListener("click", () => {
+            STOP_NAME = el.getAttribute("data-name");
+            stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+            suggestionsContainer.innerHTML = "";
+            selectedLines.clear();
+            expandedLineKey = null;
+            try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+            fetchDepartures();
+            stopNameEl.blur();
+          });
+        });
+      }
+    }
+    function exitEditMode() {
+      const v = stopNameEl.textContent?.trim() || "";
+      STOP_NAME = v || PLACEHOLDER;
+      stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+      editingStopName = false;
+    }
+
+    stopNameEl.addEventListener("focus", enterEditMode, { passive: true });
+    stopNameEl.addEventListener("touchstart", () => { stopNameEl.focus(); enterEditMode(); }, { passive: true });
+    stopNameEl.addEventListener("click", () => { if (document.activeElement !== stopNameEl) { stopNameEl.focus(); enterEditMode(); } }, { passive: true });
+
+    stopNameEl.addEventListener("input", () => {
+      const v = stopNameEl.textContent?.trim() || "";
+      STOP_NAME = v;
+      if (!v) { suggestionsContainer.innerHTML = ""; return; }
+      fetchSuggestionsByQuery(v);
+    });
+
+    stopNameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const pick = suggestionsContainer.querySelector(".suggestion-item.selected") || suggestionsContainer.querySelector(".suggestion-item");
+        const txt = pick ? pick.getAttribute("data-name") : stopNameEl.textContent?.trim();
+        STOP_NAME = txt || STOP_NAME;
+        stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+        suggestionsContainer.innerHTML = "";
+        selectedLines.clear();
+        expandedLineKey = null;
+        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+        fetchDepartures();
+        stopNameEl.blur();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const items = Array.from(suggestionsContainer.querySelectorAll(".suggestion-item"));
+        if (!items.length) return;
+        currentSuggestionIndex = (currentSuggestionIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+        items.forEach((el, i) => el.classList.toggle("selected", i === currentSuggestionIndex));
+      }
+    });
+
+    stopNameEl.addEventListener("blur", exitEditMode);
+  }
+
+  // Anti-écrasement H1 par la géoloc auto
   let autoFillAllowed = true;
 
+  // Cache position
   const LAST_FIX_KEY = "lastPositionFix.v1";
   function saveLastFix(loc) {
     try {
@@ -144,9 +239,11 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch { return null; }
   }
 
-  let nearbyRaw = [];
-  let nearbyStops = [];
+  // Listes proches
+  let nearbyRaw = [];   // résultats complets de /locations triés par distance
+  let nearbyStops = []; // seulement stations avec id, triées par distance
 
+  // Quick-actions
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
 
   document.getElementById("btn-gps")?.addEventListener("click", () => {
@@ -162,7 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
           fetchDepartures();
         }
       });
-    }, true);
+    }, true); // frais, pas de watch ici
   });
 
   document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
@@ -178,38 +275,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  if (stopNameEl) {
-    stopNameEl.addEventListener("input", () => {
-      const v = stopNameEl.textContent?.trim() || "";
-      STOP_NAME = v;
-      if (!v) {
-        suggestionsContainer.innerHTML = "";
-        return;
-      }
-      fetchSuggestionsByQuery(v);
-    });
-    stopNameEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const pick = suggestionsContainer.querySelector(".suggestion-item.selected") || suggestionsContainer.querySelector(".suggestion-item");
-        const txt = pick ? pick.getAttribute("data-name") : stopNameEl.textContent?.trim();
-        STOP_NAME = txt || STOP_NAME;
-        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-        suggestionsContainer.innerHTML = "";
-        selectedLines.clear();
-        expandedLineKey = null;
-        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-        fetchDepartures();
-      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const items = Array.from(suggestionsContainer.querySelectorAll(".suggestion-item"));
-        if (!items.length) return;
-        currentSuggestionIndex = (currentSuggestionIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-        items.forEach((el, i) => el.classList.toggle("selected", i === currentSuggestionIndex));
-      }
-    });
-  }
-
+  // Suggestions par géoloc au chargement
   (function initFromCacheOrGeo() {
     try {
       const last = localStorage.getItem("lastUserStop");
@@ -228,6 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   })();
 
+  // --- API helpers ---
   function fetchSuggestionsByQuery(q) {
     const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(q)}`;
     fetch(url).then(r => r.json()).then(data => {
@@ -242,6 +309,7 @@ document.addEventListener("DOMContentLoaded", () => {
           expandedLineKey = null;
           try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
           fetchDepartures();
+          stopNameEl?.blur();
         });
       });
     }).catch(() => {});
@@ -263,6 +331,7 @@ document.addEventListener("DOMContentLoaded", () => {
           expandedLineKey = null;
           try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
           fetchDepartures();
+          stopNameEl?.blur();
         });
       });
       cb && cb();
@@ -278,9 +347,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }, () => cb && cb(), opts);
   }
 
+  // --- Fetch départs ---
   async function fetchDepartures() {
     if (!STOP_NAME) return;
-    try { lastUpdateElement.textContent = "…"; } catch {}
+    try {
+      lastUpdateElement.textContent = "…";
+    } catch {}
     try {
       const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(STOP_NAME)}&limit=${STATIONBOARD_LIMIT}`;
       const data = await fetch(url).then(r => r.json());
@@ -292,8 +364,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // --- Rendu ---
   function renderDepartures(departures) {
-    const thermo = document.getElementById("thermo-container");
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
     departuresContainer.innerHTML = "";
@@ -340,6 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let content = "";
       let lineColor = "";
 
+      // On prélève un operator de référence pour cette ligne
       const sampleTimes = Object.values(destinations)[0] || [];
       const sampleDep = sampleTimes[0]?.raw || null;
       const operator = sampleDep?.operator || null;
@@ -440,7 +513,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function showThermometer(fromName, toName, hhmm, lineLabel) {
-    const thermo = document.getElementById("thermo-container");
     if (!thermo) return;
     try {
       const now = new Date();
@@ -505,12 +577,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Démarrage
   (async () => {
     const cached = loadLastFix();
     if (cached) {
       fetchSuggestionsByLocation(cached.lon, cached.lat, () => {});
     }
-    if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
+    if (STOP_NAME === PLACEHOLDER) {
       updateUserLocation(
         () => findAndFillBestStop(),
         { fresh: true, withWatch: true, quickCallback: () => findAndFillBestStop() }
