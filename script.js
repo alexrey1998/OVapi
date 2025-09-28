@@ -657,14 +657,72 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Escape" && document.body.classList.contains("filters-open")) closeFilterModal();
   });
 
-  const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
-  fullscreenToggleBtn?.addEventListener("click", () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
+  // Gestion plein écran améliorée
+  function isMobileDevice() {
+    return window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+
+  function enterFullscreen() {
+    if (isMobileDevice()) {
+      // Mode plein écran simulé pour mobile
       document.body.classList.add("fullscreen");
     } else {
-      document.exitFullscreen();
+      // Vrai plein écran navigateur pour desktop
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+      }
+      document.body.classList.add("fullscreen");
+    }
+  }
+
+  function exitFullscreen() {
+    if (isMobileDevice()) {
+      // Sortie mode simulé mobile
       document.body.classList.remove("fullscreen");
+    } else {
+      // Sortie vrai plein écran desktop
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+      document.body.classList.remove("fullscreen");
+    }
+  }
+
+  const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
+  fullscreenToggleBtn?.addEventListener("click", () => {
+    if (document.body.classList.contains("fullscreen")) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  });
+
+  // Gestion des événements plein écran desktop
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) {
+      document.body.classList.remove("fullscreen");
+    }
+  });
+
+  // Gestion clic pour sortir du plein écran mobile
+  document.addEventListener("click", (e) => {
+    if (!document.body.classList.contains("fullscreen")) return;
+    if (!isMobileDevice()) return;
+
+    // Vérifier si le clic est sur un élément interactif
+    const interactiveElements = [
+      ".line-card", ".departure-item", ".line-checkbox", 
+      "#quick-actions button", "#thermo-back", ".qa-btn",
+      "#stop-name", "#stop-suggestions div"
+    ];
+    
+    const isInteractive = interactiveElements.some(selector => 
+      e.target.closest(selector)
+    );
+
+    // Si ce n'est pas un élément interactif, sortir du plein écran
+    if (!isInteractive) {
+      exitFullscreen();
     }
   });
 
@@ -732,6 +790,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (category === "B" || category === "T" || category === "M") {
           content = number || category;
           lineColor = lineColors[operator][content];
+        } else if (category === "FUN") {
+          content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
+          lineColor = lineColors[operator][number];
         }
       }
 
@@ -742,6 +803,9 @@ document.addEventListener("DOMContentLoaded", () => {
           lineColor = lineColors.categories.default;
         } else if (category === "BAT") {
           content = number && !number.startsWith("0") ? `BAT ${number}` : "BAT";
+          lineColor = lineColors.categories.default;
+        } else if (category === "FUN") {
+          content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
           lineColor = lineColors.categories.default;
         } else if (category === "GB") {
           content = "🚠";
