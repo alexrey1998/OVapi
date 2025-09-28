@@ -701,7 +701,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    const sortedLines = Object.entries(groupedByLine).sort(([a], [b]) => {
+    // Filtrer les lignes qui ont au moins un départ à afficher
+    const filteredLines = Object.entries(groupedByLine).filter(([lineKey, destinations]) => {
+      return Object.values(destinations).some(times => times.length > 0);
+    });
+
+    const sortedLines = filteredLines.sort(([a], [b]) => {
       const numA = a.split(" ").pop();
       const numB = b.split(" ").pop();
       const isNumA = !isNaN(numA);
@@ -718,18 +723,37 @@ document.addEventListener("DOMContentLoaded", () => {
       let content = "";
       let lineColor = "";
 
-      if (category === "B" || category === "T" || category === "M") {
-        content = number || category;
-        lineColor = lineColors[content] || "#007bff";
-      } else if (category === "GB") {
-        content = "🚠";
-        lineColor = "#9ca3af";
-      } else if (category === "BAT") {
-        content = number && !number.startsWith("0") ? `BAT ${number}` : "BAT";
-        lineColor = lineColors["BAT"] || "#007bff";
-      } else {
-        content = number && !number.startsWith("0") ? `${category} ${number}` : category;
-        lineColor = "#eb0000";
+      // Récupérer le premier départ pour obtenir l'opérateur
+      const firstDep = Object.values(destinations)[0]?.[0]?.raw;
+      const operator = firstDep?.operator;
+
+      // 1. D'abord chercher couleur par opérateur
+      if (operator && lineColors[operator] && lineColors[operator][content || number]) {
+        if (category === "B" || category === "T" || category === "M") {
+          content = number || category;
+          lineColor = lineColors[operator][content];
+        }
+      }
+
+      // 2. Si pas trouvé, logique par catégorie
+      if (!lineColor) {
+        if (category === "B" || category === "T" || category === "M") {
+          content = number || category;
+          lineColor = lineColors.categories.default;
+        } else if (category === "BAT") {
+          content = number && !number.startsWith("0") ? `BAT ${number}` : "BAT";
+          lineColor = lineColors.categories.default;
+        } else if (category === "GB") {
+          content = "🚠";
+          lineColor = lineColors.categories.GB;
+        } else if (lineColors.categories.trains.includes(category)) {
+          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
+          lineColor = lineColors.categories.trainsColor;
+        } else {
+          // Fallback pour les couleurs directes (trains spéciaux)
+          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
+          lineColor = lineColors[content] || lineColors.categories.trainsColor;
+        }
       }
 
       const card = document.createElement("div");
