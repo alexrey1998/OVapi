@@ -149,7 +149,17 @@ export const lineColors = {
   },
   
   TPN: {
-    // Opérateur TPN (Neuchâtel) - à compléter
+    // Bus TPN (Nyon)
+    "803": "#E53E3E",
+    "804": "#38A169", 
+    "805": "#DD6B20",
+    "810": "#B794F6",
+    "811": "#805AD5",
+    "813": "#F687B3",
+    "814": "#2B6CB0",
+    "815": "#C53030",
+    "818": "#8B4513",
+    "891": "#ECC94B"
   },
   
   "MBC-cg": {
