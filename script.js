@@ -1,5 +1,5 @@
-// script.js
-import { defaultBadgeColor, staticColors, getOperatorColor } from "./colors.js";
+//script.js
+import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
 /* ---------- Helpers paramétrables ---------- */
@@ -18,8 +18,6 @@ function parseHMStoMs(hms, dfltMs) {
 const DISPLAY_WINDOW_MS = parseHMStoMs(settings.maxDisplayPeriod, 90 * 60 * 1000);
 const REFRESH_MS = parseHMStoMs(settings.refreshInterval, 60 * 1000);
 const STATIONBOARD_LIMIT = getInt(settings.stationboardLimit, 30);
-const PLACEHOLDER = "Entrez le nom de l'arrêt ici";
-let editingStopName = false;
 
 /* ---------- Données Suisses (CSV) ---------- */
 let swissStationsSet = new Set();
@@ -81,7 +79,7 @@ function adjustLineBadgePadding(el) {
     const pad = base + extra;
     el.style.paddingLeft = pad + "px";
     el.style.paddingRight = pad + "px";
-  } catch {}
+  } catch { /* ignorer */ }
 }
 
 /* ---------- Application ---------- */
@@ -126,94 +124,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Etat
-  let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || PLACEHOLDER) : PLACEHOLDER;
+  let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || "Entrez le nom de l'arrêt ici") : "Entrez le nom de l'arrêt ici";
+  if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
   let currentSuggestionIndex = -1;
   let userLocation = null; // { lat, lon, accuracy? }
   let selectedLines = new Set();
   let expandedLineKey = null;
-
-  // H1 éditable: entrée/sortie de mode édition + suggestions au focus
-  if (stopNameEl) {
-    stopNameEl.contentEditable = "true";
-    stopNameEl.setAttribute("role", "textbox");
-    stopNameEl.setAttribute("aria-label", "Nom d'arrêt");
-    stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-
-    function enterEditMode() {
-      if (editingStopName) return;
-      editingStopName = true;
-      const raw = stopNameEl.textContent?.trim() || "";
-      stopNameEl.textContent = (raw === PLACEHOLDER) ? "" : raw;
-
-      // placer le caret en fin
-      const sel = window.getSelection();
-      const r = document.createRange();
-      r.selectNodeContents(stopNameEl);
-      r.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(r);
-
-      // Suggestions initiales: proches si dispo
-      if (nearbyStops.length) {
-        suggestionsContainer.innerHTML = nearbyStops.slice(0, 8)
-          .map(s => `<div class="suggestion-item" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}${isSwissStation(s.name) ? " 🇨🇭" : ""}</div>`)
-          .join("");
-        Array.from(suggestionsContainer.children).forEach(el => {
-          el.addEventListener("click", () => {
-            STOP_NAME = el.getAttribute("data-name");
-            stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-            suggestionsContainer.innerHTML = "";
-            selectedLines.clear();
-            expandedLineKey = null;
-            try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-            fetchDepartures();
-            stopNameEl.blur();
-          });
-        });
-      }
-    }
-    function exitEditMode() {
-      const v = stopNameEl.textContent?.trim() || "";
-      STOP_NAME = v || PLACEHOLDER;
-      stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-      editingStopName = false;
-    }
-
-    stopNameEl.addEventListener("focus", enterEditMode, { passive: true });
-    stopNameEl.addEventListener("touchstart", () => { stopNameEl.focus(); enterEditMode(); }, { passive: true });
-    stopNameEl.addEventListener("click", () => { if (document.activeElement !== stopNameEl) { stopNameEl.focus(); enterEditMode(); } }, { passive: true });
-
-    stopNameEl.addEventListener("input", () => {
-      const v = stopNameEl.textContent?.trim() || "";
-      STOP_NAME = v;
-      if (!v) { suggestionsContainer.innerHTML = ""; return; }
-      fetchSuggestionsByQuery(v);
-    });
-
-    stopNameEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const pick = suggestionsContainer.querySelector(".suggestion-item.selected") || suggestionsContainer.querySelector(".suggestion-item");
-        const txt = pick ? pick.getAttribute("data-name") : stopNameEl.textContent?.trim();
-        STOP_NAME = txt || STOP_NAME;
-        stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-        suggestionsContainer.innerHTML = "";
-        selectedLines.clear();
-        expandedLineKey = null;
-        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-        fetchDepartures();
-        stopNameEl.blur();
-      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const items = Array.from(suggestionsContainer.querySelectorAll(".suggestion-item"));
-        if (!items.length) return;
-        currentSuggestionIndex = (currentSuggestionIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-        items.forEach((el, i) => el.classList.toggle("selected", i === currentSuggestionIndex));
-      }
-    });
-
-    stopNameEl.addEventListener("blur", exitEditMode);
-  }
 
   // Anti-écrasement H1 par la géoloc auto
   let autoFillAllowed = true;
@@ -263,125 +179,542 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
-    if (nearbyStops.length >= 2) {
-      const idx = nearbyStops.findIndex(s => s.name === STOP_NAME);
-      const next = (idx === 0) ? nearbyStops[1] : nearbyStops[0];
-      STOP_NAME = next.name;
+    const applyToggle = () => {
+      if (nearbyStops.length < 2) return;
+      const first = nearbyStops[0]?.name;
+      const second = nearbyStops[1]?.name;
+      if (!first || !second) return;
+      STOP_NAME = (STOP_NAME === first) ? second : first;
       if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
       selectedLines.clear();
       expandedLineKey = null;
       try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
       fetchDepartures();
+    };
+    if (nearbyStops.length >= 2) {
+      applyToggle();
+    } else if (userLocation) {
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, applyToggle);
     }
   });
 
-  // Suggestions par géoloc au chargement
-  (function initFromCacheOrGeo() {
-    try {
-      const last = localStorage.getItem("lastUserStop");
-      if (last) {
-        STOP_NAME = last;
-        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-        fetchDepartures();
-        return;
+  // Saisie nom d'arrêt + suggestions
+  if (stopNameEl) {
+    stopNameEl.addEventListener("click", function() {
+      const plain = stopNameEl.textContent;
+      if (plain.trim() !== "") stopNameEl.textContent = "";
+      updateUserLocation(function() {
+        if (userLocation && stopNameEl.textContent.trim() === "") {
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
+            showNearbyStopsSuggestions();
+          });
+        }
+      }); // position suffisante pour l'autocomplétion
+      this.focus();
+    });
+
+    // Ajouts pour fiabiliser l'amorçage sans changer la logique
+    stopNameEl.addEventListener("focus", function() {
+      const plain = stopNameEl.textContent;
+      if (plain.trim() !== "") stopNameEl.textContent = "";
+      updateUserLocation(function() {
+        if (userLocation && stopNameEl.textContent.trim() === "") {
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
+            showNearbyStopsSuggestions();
+          });
+        }
+      });
+      this.focus();
+    });
+
+    stopNameEl.addEventListener("pointerdown", function() {
+      const plain = stopNameEl.textContent;
+      if (plain.trim() !== "") stopNameEl.textContent = "";
+      updateUserLocation(function() {
+        if (userLocation && stopNameEl.textContent.trim() === "") {
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
+            showNearbyStopsSuggestions();
+          });
+        }
+      });
+      this.focus();
+    });
+
+    stopNameEl.addEventListener("input", function() {
+      currentSuggestionIndex = -1;
+      autoFillAllowed = false; // l'utilisateur saisit → ne pas écraser H1
+      const q = this.textContent.trim();
+      if (q.length > 0) {
+        fetchSuggestions(q);
+      } else {
+        if (userLocation) {
+          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, showNearbyStopsSuggestions);
+        } else {
+          suggestionsContainer.innerHTML = "";
+          suggestionsContainer.style.display = "none";
+        }
       }
-    } catch {}
-    const cached = loadLastFix();
-    if (cached) {
-      fetchSuggestionsByLocation(cached.lon, cached.lat, () => {});
+    });
+
+    stopNameEl.addEventListener("keydown", function(e) {
+      const items = suggestionsContainer.querySelectorAll("div[data-name]");
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (items.length > 0) { currentSuggestionIndex = (currentSuggestionIndex + 1) % items.length; updateSuggestionHighlight(); }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (items.length > 0) { currentSuggestionIndex = (currentSuggestionIndex - 1 + items.length) % items.length; updateSuggestionHighlight(); }
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (items.length > 0) {
+          if (currentSuggestionIndex === -1) { currentSuggestionIndex = 0; updateSuggestionHighlight(); }
+          const chosenName = items[currentSuggestionIndex].getAttribute("data-name");
+          STOP_NAME = chosenName;
+          stopNameEl.innerHTML = formatStopNameHTML(chosenName);
+          selectedLines.clear();
+          suggestionsContainer.innerHTML = "";
+          suggestionsContainer.style.display = "none";
+          currentSuggestionIndex = -1;
+          autoFillAllowed = false;
+          try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+          fetchDepartures();
+          stopNameEl.blur();
+        } else {
+          stopNameEl.blur();
+        }
+      }
+    });
+
+    stopNameEl.addEventListener("blur", function() {
+      setTimeout(() => {
+        suggestionsContainer.innerHTML = "";
+        suggestionsContainer.style.display = "none";
+        currentSuggestionIndex = -1;
+      }, 200);
+      const val = this.textContent.trim();
+      if (val) {
+        STOP_NAME = val;
+        stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+        selectedLines.clear();
+        autoFillAllowed = false;
+        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+        fetchDepartures();
+      }
+    });
+  }
+
+  function updateSuggestionHighlight() {
+    const items = suggestionsContainer.querySelectorAll("div[data-name]");
+    items.forEach((el, idx) => el.classList.toggle("selected", idx === currentSuggestionIndex));
+  }
+
+  function showNearbyStopsSuggestions() {
+    if (document.activeElement !== stopNameEl || stopNameEl.textContent.trim() !== "") return;
+    if (!nearbyStops.length) {
+      suggestionsContainer.innerHTML = "";
+      suggestionsContainer.style.display = "none";
+      return;
+    }
+    suggestionsContainer.innerHTML = nearbyStops.slice(0, 5).map(s =>
+      `<div data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`
+    ).join("");
+    suggestionsContainer.style.display = "block";
+    currentSuggestionIndex = -1;
+    suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
+      el.addEventListener("mousedown", () => {
+        const chosenName = el.getAttribute("data-name");
+        STOP_NAME = chosenName;
+        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosenName);
+        selectedLines.clear();
+        suggestionsContainer.innerHTML = "";
+        suggestionsContainer.style.display = "none";
+        currentSuggestionIndex = -1;
+        autoFillAllowed = false;
+        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+        fetchDepartures();
+      });
+    });
+  }
+
+  /* ===== Suggestions géolocalisées ===== */
+  function hasValidCoord(s) {
+    return s && s.coordinate && Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
+  }
+  function fetchSuggestionsByLocation(lon, lat, callback) {
+    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const list = Array.isArray(data.stations) ? data.stations : [];
+        const enriched = list
+          .filter(s => hasValidCoord(s) || Number.isFinite(s.distance))
+          .map(s => {
+            const d = Number.isFinite(s.distance)
+              ? Number(s.distance)
+              : computeDistance(lat, lon, s.coordinate.y, s.coordinate.x) * 1000;
+            return { id: s.id ?? null, type: (s.type || "").toLowerCase() || null, name: s.name, d };
+          })
+          .sort((a, b) => a.d - b.d);
+
+        nearbyRaw = enriched;
+        nearbyStops = enriched.filter(e => e.id && (!e.type || e.type === "station"));
+        if (typeof callback === "function") callback();
+      })
+      .catch(err => {
+        console.error("Erreur suggestions géoloc", err);
+        nearbyRaw = [];
+        nearbyStops = [];
+        if (typeof callback === "function") callback();
+      });
+  }
+
+  function fetchSuggestions(query) {
+    const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}&type=station`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const stations = (data.stations || [])
+          .filter(s => s.id)
+          .slice(0, 8);
+        if (stations.length > 0) {
+          suggestionsContainer.innerHTML = stations.map(s => `<div data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`).join("");
+          suggestionsContainer.style.display = "block";
+          currentSuggestionIndex = -1;
+          suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
+            el.addEventListener("mousedown", function() {
+              const chosenName = el.getAttribute("data-name");
+              STOP_NAME = chosenName;
+              stopNameEl.innerHTML = formatStopNameHTML(chosenName);
+              selectedLines.clear();
+              suggestionsContainer.innerHTML = "";
+              suggestionsContainer.style.display = "none";
+              currentSuggestionIndex = -1;
+              autoFillAllowed = false;
+              try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+              fetchDepartures();
+            });
+          });
+        } else {
+          suggestionsContainer.innerHTML = "";
+          suggestionsContainer.style.display = "none";
+          currentSuggestionIndex = -1;
+        }
+      })
+      .catch(err => console.error("Erreur suggestions", err));
+  }
+
+  /* ===== Géoloc fraîche + amélioration par watch (version améliorée) ===== */
+  function updateUserLocation(cb, opts = false) {
+    if (!navigator.geolocation) { if (cb) cb(); return; }
+
+    let fresh = false, withWatch = false, quickCallback = null, finalCallback = null;
+    if (typeof opts === "boolean") {
+      fresh = opts;
+      finalCallback = cb;
+    } else if (opts && typeof opts === "object") {
+      fresh = !!opts.fresh;
+      withWatch = !!opts.withWatch;
+      quickCallback = opts.quickCallback;
+      finalCallback = cb || opts.finalCallback;
     } else {
-      updateUserLocation(() => fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {}), true);
+      finalCallback = cb;
     }
-  })();
 
-  // --- API helpers ---
-  function fetchSuggestionsByQuery(q) {
-    const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(q)}`;
-    fetch(url).then(r => r.json()).then(data => {
-      const items = (data.stations || data.locations || []).filter(s => s.id && s.name);
-      suggestionsContainer.innerHTML = items.slice(0, 8).map(s => `<div class="suggestion-item" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`).join("");
-      Array.from(suggestionsContainer.children).forEach(el => {
-        el.addEventListener("click", () => {
-          STOP_NAME = el.getAttribute("data-name");
-          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-          suggestionsContainer.innerHTML = "";
-          selectedLines.clear();
-          expandedLineKey = null;
-          try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-          fetchDepartures();
-          stopNameEl?.blur();
-        });
-      });
-    }).catch(() => {});
-  }
-  function fetchSuggestionsByLocation(lon, lat, cb) {
-    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}&type=station`;
-    fetch(url).then(r => r.json()).then(data => {
-      nearbyRaw = (data.stations || data.locations || []).filter(s => s.id && s.name && Number.isFinite(s.distance || 0));
-      nearbyRaw.sort((a,b) => (a.distance||0) - (b.distance||0));
-      nearbyStops = nearbyRaw.slice(0, 5).map(s => ({ name: s.name, id: s.id, distance: s.distance||0 }));
-      const html = nearbyStops.map((s, i) => `<div class="suggestion-item${i===0?' selected':''}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}${isSwissStation(s.name) ? " 🇨🇭" : ""}</div>`).join("");
-      suggestionsContainer.innerHTML = html;
-      Array.from(suggestionsContainer.children).forEach(el => {
-        el.addEventListener("click", () => {
-          STOP_NAME = el.getAttribute("data-name");
-          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-          suggestionsContainer.innerHTML = "";
-          selectedLines.clear();
-          expandedLineKey = null;
-          try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-          fetchDepartures();
-          stopNameEl?.blur();
-        });
-      });
-      cb && cb();
-    }).catch(() => { cb && cb(); });
-  }
-  function updateUserLocation(cb, fresh=false) {
-    if (!navigator.geolocation) { cb && cb(); return; }
-    const opts = fresh ? { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 } : { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 };
-    navigator.geolocation.getCurrentPosition(pos => {
-      userLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy ?? null };
-      saveLastFix(userLocation);
-      cb && cb();
-    }, () => cb && cb(), opts);
+    let quickDone = false, finalDone = false;
+    const finishQuickOnce = () => { 
+      if (!quickDone && quickCallback) { 
+        quickDone = true; 
+        quickCallback(); 
+      } 
+    };
+    const finishFinalOnce = () => { 
+      if (!finalDone && finalCallback) { 
+        finalDone = true; 
+        finalCallback(); 
+      } 
+    };
+    const finalize = () => { 
+      try { if (userLocation) saveLastFix(userLocation); } catch {} 
+      finishFinalOnce(); 
+    };
+
+    // Timer pour callback rapide (2 secondes max)
+    const quickTimer = setTimeout(() => {
+      if (userLocation) finishQuickOnce();
+    }, 2000);
+
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        userLocation = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        };
+
+        // Déclencher callback rapide si pas encore fait
+        if (!quickDone) {
+          clearTimeout(quickTimer);
+          finishQuickOnce();
+        }
+
+        if (!withWatch) { finalize(); return; }
+
+        let bestAcc = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : Infinity;
+        let watchId = null;
+        const stopWatch = () => {
+          if (watchId !== null) {
+            navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+          }
+        };
+
+        const timeoutId = setTimeout(() => {
+          stopWatch();
+          finalize();
+        }, 8000); // timeout total à 8 secondes
+
+        watchId = navigator.geolocation.watchPosition(
+          p => {
+            const acc = Number.isFinite(p.coords.accuracy) ? p.coords.accuracy : Infinity;
+            if (acc < bestAcc) {
+              bestAcc = acc;
+              userLocation = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: acc };
+            }
+            if (bestAcc <= 50) {
+              clearTimeout(timeoutId);
+              stopWatch();
+              finalize();
+            }
+          },
+          _err => {
+            clearTimeout(timeoutId);
+            stopWatch();
+            finalize();
+          },
+          { enableHighAccuracy: true, maximumAge: 0 }
+        );
+      },
+      _err => { 
+        clearTimeout(quickTimer);
+        finalize(); 
+      },
+      { enableHighAccuracy: true, maximumAge: fresh ? 0 : 15000, timeout: 8000 }
+    );
   }
 
-  // --- Fetch départs ---
-  async function fetchDepartures() {
-    if (!STOP_NAME) return;
+  // Fonction d'assistance pour le remplissage d'arrêt
+  async function findAndFillBestStop() {
+    if (!userLocation || !autoFillAllowed || STOP_NAME !== "Entrez le nom de l'arrêt ici") {
+      return;
+    }
+
+    // Récupérer suggestions basées sur position
+    return new Promise((resolve) => {
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async () => {
+        // Chercher le 1er arrêt avec des départs
+        let chosen = null;
+        for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
+          const candidate = nearbyStops[i].name;
+          const ok = await checkDeparturesForStop(candidate);
+          if (ok) { chosen = candidate; break; }
+        }
+        if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
+
+        // Vérifier à nouveau si toujours autorisé
+        if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
+          STOP_NAME = chosen;
+          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+          fetchDepartures();
+        }
+        resolve(chosen);
+      });
+    });
+  }
+
+  // Ajustement destination trains internationaux
+  async function adjustTrainDestination(dep) {
+    const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
     try {
-      lastUpdateElement.textContent = "…";
-    } catch {}
-    try {
-      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(STOP_NAME)}&limit=${STATIONBOARD_LIMIT}`;
+      const locData = await fetch(locURL).then(r => r.json());
+      const station = locData.stations && locData.stations[0];
+      if (!station) return null;
+      const stationId = station.id;
+      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}&limit=5`;
       const data = await fetch(url).then(r => r.json());
-      const departures = Array.isArray(data.stationboard) ? data.stationboard : [];
-      renderDepartures(departures);
-      try { lastUpdateElement.textContent = fmtHM(new Date()); } catch {}
+      const departures = data.stationboard || [];
+      const currentName = parseInt(dep.name);
+      for (const other of departures) {
+        const otherName = parseInt(other.name);
+        if (otherName === currentName || otherName === currentName + 1) {
+          if (other.to && other.to !== dep.to && !isSwissStation(other.to)) return other.to;
+        }
+      }
     } catch (e) {
-      console.error("Erreur stationboard", e);
+      console.error("Ajustement destination", dep.to, e);
+    }
+    return null;
+  }
+
+  async function checkDeparturesForStop(stopNameCandidate) {
+    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopNameCandidate)}&limit=${STATIONBOARD_LIMIT}`;
+    try {
+      const data = await fetch(API_URL).then(r => r.json());
+      const departures = data.stationboard || [];
+      const now = Date.now();
+      return departures.some(dep => {
+        const sched = new Date(dep.stop?.departure).getTime();
+        const delay = Number(dep.stop?.delay || 0);
+        const eff = Number.isFinite(sched) ? sched + (Number.isFinite(delay) ? delay * 60000 : 0) : NaN;
+        return Number.isFinite(eff) && (eff - now) <= DISPLAY_WINDOW_MS;
+      });
+    } catch {
+      return false;
     }
   }
 
-  // --- Rendu ---
+  // Récupération + rendu
+  async function fetchDepartures() {
+    const key = STOP_NAME;
+    if (!key || String(key).trim() === "") return;
+    const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
+    try {
+      const data = await fetch(API_URL).then(r => r.json());
+      let departures = (data && data.stationboard) ? data.stationboard : [];
+
+      await Promise.all(departures.map(async dep => {
+        if (dep.category === "T" && dep.to && dep.to.indexOf(",") === -1 && !isSwissStation(dep.to)) {
+          const adjusted = await adjustTrainDestination(dep);
+          if (adjusted) dep.to = adjusted;
+        }
+      }));
+
+      const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
+      lines.sort((a, b) => {
+        const numA = a.split(" ").pop();
+        const numB = b.split(" ").pop();
+        const isNumA = !isNaN(numA);
+        const isNumB = !isNaN(numB);
+        if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
+        if (isNumA) return -1;
+        if (isNumB) return 1;
+        return numA.localeCompare(numB);
+      });
+      if (selectedLines.size === 0) lines.forEach(l => selectedLines.add(l));
+
+      filterBox.innerHTML = `
+        <div id="select-all-container" style="display:flex;gap:8px;margin-bottom:8px;">
+          <button id="select-all">Sélectionner tout</button>
+          <button id="deselect-all">Désélectionner tout</button>
+        </div>
+        <div id="checkboxes-container">
+          ${lines.map(line => {
+            const checked = selectedLines.has(line) ? "checked" : "";
+            return `<label class="filter-item">
+              <input type="checkbox" value="${escapeHtml(line)}" ${checked} class="line-checkbox"> Ligne ${escapeHtml(line)}
+            </label>`;
+          }).join("")}
+        </div>
+      `;
+      ensureFilterClose();
+      filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
+        cb.addEventListener("change", () => {
+          if (cb.checked) selectedLines.add(cb.value);
+          else selectedLines.delete(cb.value);
+          renderDepartures(departures);
+        });
+      });
+      filterBox.querySelector("#select-all")?.addEventListener("click", () => {
+        lines.forEach(l => selectedLines.add(l));
+        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
+        renderDepartures(departures);
+      });
+      filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
+        selectedLines.clear();
+        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
+        renderDepartures(departures);
+      });
+
+      renderDepartures(departures);
+      const now = new Date();
+      if (lastUpdateElement) {
+        lastUpdateElement.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      }
+    } catch (e) {
+      console.error("Erreur chargement départs", e);
+      departuresContainer.innerHTML = "<p>Erreur de chargement</p>";
+    }
+  }
+
+  function closeFilterModal() {
+    document.body.classList.remove("filters-open");
+    filterBox.classList.remove("modal-open");
+    if (!filterBox.classList.contains("hidden")) filterBox.classList.add("hidden");
+  }
+  function ensureFilterClose() {
+    let btn = document.getElementById("filter-close");
+    if (!btn || btn.parentElement !== filterBox) {
+      if (btn && btn.parentElement) btn.parentElement.removeChild(btn);
+      btn = document.createElement("button");
+      btn.id = "filter-close";
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Fermer");
+      btn.textContent = "×";
+      btn.addEventListener("click", closeFilterModal);
+      filterBox.prepend(btn);
+    }
+  }
+  function openFilterModal() {
+    ensureFilterClose();
+    filterBox.classList.remove("hidden");
+    filterBox.classList.add("modal-open");
+    document.body.classList.add("filters-open");
+  }
+  toggleFilterBtn?.addEventListener("click", () => {
+    if (document.body.classList.contains("filters-open")) closeFilterModal();
+    else openFilterModal();
+  });
+  document.addEventListener("click", (e) => {
+    if (document.body.classList.contains("filters-open")) {
+      const inModal = filterBox.contains(e.target);
+      const onToggle = toggleFilterBtn?.contains(e.target);
+      if (!inModal && !onToggle) closeFilterModal();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.body.classList.contains("filters-open")) closeFilterModal();
+  });
+
+  const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
+  fullscreenToggleBtn?.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      document.body.classList.add("fullscreen");
+    } else {
+      document.exitFullscreen();
+      document.body.classList.remove("fullscreen");
+    }
+  });
+
   function renderDepartures(departures) {
+    departuresContainer.innerHTML = "";
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
-    departuresContainer.innerHTML = "";
-    const filtered = departures.filter(dep => selectedLines.size === 0 || selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
 
+    const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
     const groupedByLine = {};
     const nowMs = Date.now();
+
     filtered.forEach(dep => {
       const key = `${dep.category || ""} ${dep.number || ""}`;
       if (!groupedByLine[key]) groupedByLine[key] = {};
       const dest = dep.to || "";
       if (!groupedByLine[key][dest]) groupedByLine[key][dest] = [];
+
       const schedMs = new Date(dep.stop?.departure).getTime();
       const delayMin = Number(dep.stop?.delay || 0);
       const effMs = Number.isFinite(schedMs) ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0) : NaN;
       const remaining = Number.isFinite(effMs) ? Math.max(0, Math.round((effMs - nowMs) / 60000)) : null;
+
       if (Number.isFinite(effMs) && (effMs - nowMs) <= DISPLAY_WINDOW_MS) {
         groupedByLine[key][dest].push({
           raw: dep,
@@ -412,23 +745,18 @@ document.addEventListener("DOMContentLoaded", () => {
       let content = "";
       let lineColor = "";
 
-      // On prélève un operator de référence pour cette ligne
-      const sampleTimes = Object.values(destinations)[0] || [];
-      const sampleDep = sampleTimes[0]?.raw || null;
-      const operator = sampleDep?.operator || null;
-
       if (category === "B" || category === "T" || category === "M") {
         content = number || category;
-        lineColor = getOperatorColor(category, number, operator) || defaultBadgeColor;
+        lineColor = lineColors[content] || "#007bff";
       } else if (category === "GB") {
         content = "🚠";
-        lineColor = staticColors.GB || "#9ca3af";
+        lineColor = "#9ca3af";
       } else if (category === "BAT") {
         content = number && !number.startsWith("0") ? `BAT ${number}` : "BAT";
-        lineColor = staticColors.BAT || defaultBadgeColor;
+        lineColor = lineColors["BAT"] || "#007bff";
       } else {
         content = number && !number.startsWith("0") ? `${category} ${number}` : category;
-        lineColor = staticColors.train || "#eb0000";
+        lineColor = "#eb0000";
       }
 
       const card = document.createElement("div");
@@ -569,42 +897,37 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      const departuresContainer = document.getElementById("departures");
-      if (departuresContainer) departuresContainer.style.display = "none";
+      departuresContainer.style.display = "none";
       thermo.style.display = "block";
     } catch (e) {
       console.error("Thermomètre erreur", e);
     }
   }
 
-  // Démarrage
+  // Démarrage — remplissage rapide puis amélioration continue
   (async () => {
+    // Amorçage suggestions via cache position (ne touche pas H1)
     const cached = loadLastFix();
     if (cached) {
-      fetchSuggestionsByLocation(cached.lon, cached.lat, () => {});
+      fetchSuggestionsByLocation(cached.lon, cached.lat, () => {
+        // uniquement pour remplir nearbyStops rapidement
+      });
     }
-    if (STOP_NAME === PLACEHOLDER) {
+
+    if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
       updateUserLocation(
+        // Callback final (8 secondes max)
         () => findAndFillBestStop(),
-        { fresh: true, withWatch: true, quickCallback: () => findAndFillBestStop() }
+        {
+          fresh: true,
+          withWatch: true,
+          // Callback rapide (2 secondes max)
+          quickCallback: () => findAndFillBestStop()
+        }
       );
     } else {
       fetchDepartures();
     }
     setInterval(fetchDepartures, REFRESH_MS);
   })();
-
-  function findAndFillBestStop() {
-    if (!nearbyStops.length) return;
-    const best = nearbyStops[0];
-    if (best && best.name) {
-      const stored = localStorage.getItem("lastUserStop");
-      if (!stored) {
-        const name = best.name;
-        if (name) {
-          try { localStorage.setItem("lastUserStop", name); } catch {}
-        }
-      }
-    }
-  }
 });
