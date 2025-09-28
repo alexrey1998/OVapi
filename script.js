@@ -1,4 +1,4 @@
-//script.js
+/* script.js */
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -210,33 +210,6 @@ document.addEventListener("DOMContentLoaded", () => {
           });
         }
       }); // position suffisante pour l'autocomplétion
-      this.focus();
-    });
-
-    // Ajouts pour fiabiliser l'amorçage sans changer la logique
-    stopNameEl.addEventListener("focus", function() {
-      const plain = stopNameEl.textContent;
-      if (plain.trim() !== "") stopNameEl.textContent = "";
-      updateUserLocation(function() {
-        if (userLocation && stopNameEl.textContent.trim() === "") {
-          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
-            showNearbyStopsSuggestions();
-          });
-        }
-      });
-      this.focus();
-    });
-
-    stopNameEl.addEventListener("pointerdown", function() {
-      const plain = stopNameEl.textContent;
-      if (plain.trim() !== "") stopNameEl.textContent = "";
-      updateUserLocation(function() {
-        if (userLocation && stopNameEl.textContent.trim() === "") {
-          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
-            showNearbyStopsSuggestions();
-          });
-        }
-      });
       this.focus();
     });
 
