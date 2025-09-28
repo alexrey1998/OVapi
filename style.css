@@ -248,7 +248,9 @@ h1 {
 
 /* Plein écran */
 body.fullscreen #toggle-filter,
-body.fullscreen #fullscreen-toggle { display: none; }
+body.fullscreen #fullscreen-toggle { 
+  display: none !important; 
+}
 body.fullscreen {
   height: 100vh;
   overflow: auto;
