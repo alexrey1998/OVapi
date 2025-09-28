@@ -62,18 +62,6 @@ function computeDistance(lat1, lon1, lat2, lon2) {
     Math.sin(dLon/2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-/* Canonicalisation lignes/destinations */
-function canonicalLineKeyFromCatNum(cat, num) {
-  const c = String(cat ?? "").trim();
-  const n = String(num ?? "").trim();
-  return (c + (n ? " " + n : "")).trim();
-}
-function canonicalLineKeyFromDep(dep) {
-  return canonicalLineKeyFromCatNum(dep?.category, dep?.number);
-}
-function normalizeDestName(s) {
-  return String(s ?? "").replace(/\s+/g, " ").trim();
-}
 
 /* Mesure de texte pour ajuster le padding horizontal des badges */
 const __badgeCanvas = document.createElement("canvas");
@@ -174,37 +162,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Quick-actions
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
 
-  // Helper: premier arrêt parmi les N plus proches ayant des départs
-  async function pickFirstNearbyWithDepartures(limit = 5) {
-    const list = nearbyStops.slice(0, limit);
-    for (const s of list) {
-      const ok = await checkDeparturesForStop(s.name);
-      if (ok) return s.name;
-    }
-    return null;
-  }
-  // Helper: prochain arrêt avec départs à partir de STOP_NAME dans la fenêtre des N plus proches
-  async function nextNearbyWithDeparturesFromCurrent(limit = 5) {
-    const names = nearbyStops.slice(0, limit).map(s => s.name);
-    if (names.length === 0) return null;
-    const idx = names.findIndex(n => n.toLowerCase() === String(STOP_NAME).toLowerCase());
-    const order = idx >= 0
-      ? Array.from({ length: names.length - 1 }, (_, i) => names[(idx + 1 + i) % names.length])
-      : names;
-    for (const name of order) {
-      const ok = await checkDeparturesForStop(name);
-      if (ok) return name;
-    }
-    return null;
-  }
-
   document.getElementById("btn-gps")?.addEventListener("click", () => {
     updateUserLocation(() => {
       if (!userLocation) return;
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async () => {
-        const chosen = await pickFirstNearbyWithDepartures(5);
-        if (chosen) {
-          STOP_NAME = chosen;
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
+        if (nearbyStops.length > 0) {
+          STOP_NAME = nearbyStops[0].name;
           if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
           selectedLines.clear();
           expandedLineKey = null;
@@ -215,22 +178,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }, true); // frais, pas de watch ici
   });
 
-  document.getElementById("btn-toggle-nearby")?.addEventListener("click", async () => {
-    const doToggle = async () => {
-      const chosen = await nextNearbyWithDeparturesFromCurrent(5);
-      if (chosen && chosen !== STOP_NAME) {
-        STOP_NAME = chosen;
-        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-        selectedLines.clear();
-        expandedLineKey = null;
-        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-        fetchDepartures();
-      }
+  document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
+    const applyToggle = () => {
+      if (nearbyStops.length < 2) return;
+      const first = nearbyStops[0]?.name;
+      const second = nearbyStops[1]?.name;
+      if (!first || !second) return;
+      STOP_NAME = (STOP_NAME === first) ? second : first;
+      if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+      selectedLines.clear();
+      expandedLineKey = null;
+      try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
+      fetchDepartures();
     };
-    if (nearbyStops.length >= 1) {
-      await doToggle();
+    if (nearbyStops.length >= 2) {
+      applyToggle();
     } else if (userLocation) {
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, doToggle);
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, applyToggle);
     }
   });
 
@@ -412,21 +376,45 @@ document.addEventListener("DOMContentLoaded", () => {
       .catch(err => console.error("Erreur suggestions", err));
   }
 
-  /* ===== Géoloc fraîche + amélioration par watch (au démarrage) ===== */
+  /* ===== Géoloc fraîche + amélioration par watch (version améliorée) ===== */
   function updateUserLocation(cb, opts = false) {
     if (!navigator.geolocation) { if (cb) cb(); return; }
 
-    let fresh = false, withWatch = false;
+    let fresh = false, withWatch = false, quickCallback = null, finalCallback = null;
     if (typeof opts === "boolean") {
       fresh = opts;
+      finalCallback = cb;
     } else if (opts && typeof opts === "object") {
       fresh = !!opts.fresh;
       withWatch = !!opts.withWatch;
+      quickCallback = opts.quickCallback;
+      finalCallback = cb || opts.finalCallback;
+    } else {
+      finalCallback = cb;
     }
 
-    let done = false;
-    const finishOnce = () => { if (!done) { done = true; cb && cb(); } };
-    const finalize = () => { try { if (userLocation) saveLastFix(userLocation); } catch {} finishOnce(); };
+    let quickDone = false, finalDone = false;
+    const finishQuickOnce = () => { 
+      if (!quickDone && quickCallback) { 
+        quickDone = true; 
+        quickCallback(); 
+      } 
+    };
+    const finishFinalOnce = () => { 
+      if (!finalDone && finalCallback) { 
+        finalDone = true; 
+        finalCallback(); 
+      } 
+    };
+    const finalize = () => { 
+      try { if (userLocation) saveLastFix(userLocation); } catch {} 
+      finishFinalOnce(); 
+    };
+
+    // Timer pour callback rapide (2 secondes max)
+    const quickTimer = setTimeout(() => {
+      if (userLocation) finishQuickOnce();
+    }, 2000);
 
     navigator.geolocation.getCurrentPosition(
       pos => {
@@ -435,6 +423,12 @@ document.addEventListener("DOMContentLoaded", () => {
           lon: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
+
+        // Déclencher callback rapide si pas encore fait
+        if (!quickDone) {
+          clearTimeout(quickTimer);
+          finishQuickOnce();
+        }
 
         if (!withWatch) { finalize(); return; }
 
@@ -450,7 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const timeoutId = setTimeout(() => {
           stopWatch();
           finalize();
-        }, 8000); // réduit de 15000ms → 8000ms
+        }, 8000); // timeout total à 8 secondes
 
         watchId = navigator.geolocation.watchPosition(
           p => {
@@ -473,9 +467,41 @@ document.addEventListener("DOMContentLoaded", () => {
           { enableHighAccuracy: true, maximumAge: 0 }
         );
       },
-      _err => { finalize(); },
+      _err => { 
+        clearTimeout(quickTimer);
+        finalize(); 
+      },
       { enableHighAccuracy: true, maximumAge: fresh ? 0 : 15000, timeout: 8000 }
     );
+  }
+
+  // Fonction d'assistance pour le remplissage d'arrêt
+  async function findAndFillBestStop() {
+    if (!userLocation || !autoFillAllowed || STOP_NAME !== "Entrez le nom de l'arrêt ici") {
+      return;
+    }
+
+    // Récupérer suggestions basées sur position
+    return new Promise((resolve) => {
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async () => {
+        // Chercher le 1er arrêt avec des départs
+        let chosen = null;
+        for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
+          const candidate = nearbyStops[i].name;
+          const ok = await checkDeparturesForStop(candidate);
+          if (ok) { chosen = candidate; break; }
+        }
+        if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
+
+        // Vérifier à nouveau si toujours autorisé
+        if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
+          STOP_NAME = chosen;
+          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+          fetchDepartures();
+        }
+        resolve(chosen);
+      });
+    });
   }
 
   // Ajustement destination trains internationaux
@@ -535,13 +561,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }));
 
-      /* === Lignes: canonicalisation et filtres === */
-      const linesSet = new Set();
-      departures.forEach(dep => linesSet.add(canonicalLineKeyFromDep(dep)));
-      const lines = [...linesSet];
+      const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
       lines.sort((a, b) => {
-        const numA = a.split(" ").slice(1).join(" ");
-        const numB = b.split(" ").slice(1).join(" ");
+        const numA = a.split(" ").pop();
+        const numB = b.split(" ").pop();
         const isNumA = !isNaN(numA);
         const isNumB = !isNaN(numB);
         if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
@@ -650,14 +673,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
 
-    const filtered = departures.filter(dep => selectedLines.has(canonicalLineKeyFromDep(dep)));
+    const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
     const groupedByLine = {};
     const nowMs = Date.now();
 
     filtered.forEach(dep => {
-      const key = canonicalLineKeyFromDep(dep);
+      const key = `${dep.category || ""} ${dep.number || ""}`;
       if (!groupedByLine[key]) groupedByLine[key] = {};
-      const dest = normalizeDestName(dep.to || "");
+      const dest = dep.to || "";
       if (!groupedByLine[key][dest]) groupedByLine[key][dest] = [];
 
       const schedMs = new Date(dep.stop?.departure).getTime();
@@ -679,8 +702,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const sortedLines = Object.entries(groupedByLine).sort(([a], [b]) => {
-      const numA = a.split(" ").slice(1).join(" ");
-      const numB = b.split(" ").slice(1).join(" ");
+      const numA = a.split(" ").pop();
+      const numB = b.split(" ").pop();
       const isNumA = !isNaN(numA);
       const isNumB = !isNaN(numB);
       if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
@@ -690,10 +713,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     for (const [lineKey, destinations] of sortedLines) {
-      // Total après fenêtre et avec plafond 5 par destination
-      const totalTimes = Object.values(destinations).reduce((sum, times) => sum + Math.min(times.length, 5), 0);
-      if (totalTimes === 0) continue;
-
       const [category, ...numParts] = lineKey.split(" ");
       const number = numParts.join(" ").trim();
       let content = "";
@@ -731,9 +750,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (isExpanded) {
         for (const [dest, times] of Object.entries(destinations)) {
-          const trimmedTimes = times.slice(0, 5);
-          if (trimmedTimes.length === 0) continue;
-
+          if (times.length === 0) continue;
           let displayDest = dest;
           let suffixAirport = (displayDest === "Zürich Flughafen" || displayDest === "Genève-Aéroport") ? " ✈" : "";
           const destDiv = document.createElement("div");
@@ -743,7 +760,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const list = document.createElement("div");
           list.className = "departure-times";
-          list.innerHTML = trimmedTimes.map(o => {
+          list.innerHTML = times.slice(0, 5).map(o => {
             let delayStr = "";
             if (o.delay !== null && (o.delay <= -2 || o.delay >= 2)) {
               const d = Math.abs(o.delay);
@@ -771,8 +788,7 @@ document.addEventListener("DOMContentLoaded", () => {
         card.classList.add("compact");
 
         for (const [dest, times] of Object.entries(destinations)) {
-          const trimmedTimes = times.slice(0, 5);
-          if (!trimmedTimes.length) continue;
+          if (!times.length) continue;
 
           const destDiv = document.createElement("div");
           destDiv.className = "destination-title";
@@ -782,7 +798,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const strip = document.createElement("div");
           strip.className = "countdown-strip";
-          const mins = trimmedTimes.map(o => o.minutesLeft).sort((a,b)=>a-b);
+          const mins = times.map(o => o.minutesLeft).sort((a,b)=>a-b).slice(0,5);
           strip.innerHTML = mins.map((m, i) => `<span class="cd${i===0?' first':''}">${m}'</span>`).join("");
           card.appendChild(strip);
         }
@@ -861,7 +877,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Démarrage — frais + watch; H1 auto avec fallback si aucun des 5 n'a de départ
+  // Démarrage — remplissage rapide puis amélioration continue
   (async () => {
     // Amorçage suggestions via cache position (ne touche pas H1)
     const cached = loadLastFix();
@@ -872,27 +888,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
-      updateUserLocation(function() {
-        if (userLocation) {
-          fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async function() {
-            // 1er des 5 vrais arrêts ayant des départs
-            let chosen = null;
-            for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
-              const candidate = nearbyStops[i].name;
-              const ok = await checkDeparturesForStop(candidate);
-              if (ok) { chosen = candidate; break; }
-            }
-            if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name; // fallback conservé
-
-            // Ne pas écraser si l'utilisateur a saisi entre-temps
-            if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
-              STOP_NAME = chosen;
-              if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-              fetchDepartures();
-            }
-          });
+      updateUserLocation(
+        // Callback final (8 secondes max)
+        () => findAndFillBestStop(),
+        {
+          fresh: true,
+          withWatch: true,
+          // Callback rapide (2 secondes max)
+          quickCallback: () => findAndFillBestStop()
         }
-      }, { fresh: true, withWatch: true });
+      );
     } else {
       fetchDepartures();
     }
