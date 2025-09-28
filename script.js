@@ -1,4 +1,4 @@
-/* script.js */
+// script.js
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
