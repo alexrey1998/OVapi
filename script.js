@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.30_01.03
+// script.js - Version 2025.09.30_01.29
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -811,13 +811,17 @@ document.addEventListener("DOMContentLoaded", () => {
       const operator = firstDep?.operator;
 
       // 1. D'abord chercher couleur par opérateur
-      if (operator && lineColors[operator] && lineColors[operator][content || number]) {
-        if (category === "B" || category === "T" || category === "M") {
-          content = number || category;
-          lineColor = lineColors[operator][content];
-        } else if (category === "FUN") {
-          content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
-          lineColor = lineColors[operator][number];
+      if (operator && lineColors[operator]) {
+        // Chercher d'abord le numéro spécifique, sinon "default"
+        const colorKey = lineColors[operator][content || number] ? (content || number) : "default";
+        if (lineColors[operator][colorKey]) {
+          if (category === "B" || category === "T" || category === "M") {
+            content = number || category;
+            lineColor = lineColors[operator][colorKey];
+          } else if (category === "FUN") {
+            content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
+            lineColor = lineColors[operator][colorKey];
+          }
         }
       }
 

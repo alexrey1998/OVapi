@@ -191,6 +191,11 @@ export const lineColors = {
     "760": "#009894"
   },
 
+  PAG: {
+    // Couleur par défaut pour toutes les lignes PAG
+    "default": "#ffd500"
+  },
+
   // Couleurs par catégorie (fallbacks)
   categories: {
     trains: ["R", "S", "RN", "SN", "RE", "IR", "IC", "ICE", "EC", "TGV", "PE", "NJ", "EXT", "TER", "RER"],
