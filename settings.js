@@ -3,7 +3,7 @@ export const settings = {
   stationboardLimit: 50,
 
   // Période d’affichage max des départs (hh:mm:ss)
-  maxDisplayPeriod: "01:30:00",
+  maxDisplayPeriod: "06:30:00",
 
   // Intervalle de rafraîchissement des données (hh:mm:ss)
   refreshInterval: "00:01:00",
