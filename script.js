@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.29_23.59
+// script.js - Version 2025.09.30_01.03
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -525,22 +525,26 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const locData = await fetch(locURL).then(r => r.json());
       const station = locData.stations && locData.stations[0];
-      if (!station) return null;
+      if (!station) return dep.to; // Garde l'original si station introuvable
+      
       const stationId = station.id;
       const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}&limit=5`;
       const data = await fetch(url).then(r => r.json());
       const departures = data.stationboard || [];
       const currentName = parseInt(dep.name);
+      
       for (const other of departures) {
         const otherName = parseInt(other.name);
         if (otherName === currentName || otherName === currentName + 1) {
-          if (other.to && other.to !== dep.to && !isSwissStation(other.to)) return other.to;
+          if (other.to && other.to !== dep.to && !isSwissStation(other.to)) {
+            return other.to;
+          }
         }
       }
     } catch (e) {
       console.error("Ajustement destination", dep.to, e);
     }
-    return null;
+    return dep.to; // Retourne l'original si rien trouvé ou en cas d'erreur
   }
 
   async function checkDeparturesForStop(stopNameCandidate) {
@@ -570,7 +574,11 @@ document.addEventListener("DOMContentLoaded", () => {
       let departures = (data && data.stationboard) ? data.stationboard : [];
 
       await Promise.all(departures.map(async dep => {
-        if (dep.category === "T" && dep.to && dep.to.indexOf(",") === -1 && !isSwissStation(dep.to)) {
+        // Ajuster les destinations internationales pour les trains
+        if (dep.to && 
+            dep.to.indexOf(",") === -1 && 
+            !isSwissStation(dep.to) && 
+            lineColors.categories.trains.includes(dep.category)) {
           const adjusted = await adjustTrainDestination(dep);
           if (adjusted) dep.to = adjusted;
         }
