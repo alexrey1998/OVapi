@@ -1,6 +1,6 @@
 export const settings = {
   // Nombre de départs à récupérer auprès de l’API stationboard
-  stationboardLimit: 50,
+  stationboardLimit: 150,
 
   // Période d’affichage max des départs (hh:mm:ss)
   maxDisplayPeriod: "06:30:00",
