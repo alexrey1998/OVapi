@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.29_23.43
+// script.js - Version 2025.09.29_23.53
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -294,7 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
     suggestionsContainer.style.display = "block";
     currentSuggestionIndex = -1;
     suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-      el.addEventListener("mousedown", () => {
+      const handleSelection = () => {
         const chosenName = el.getAttribute("data-name");
         STOP_NAME = chosenName;
         if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosenName);
@@ -305,7 +305,9 @@ document.addEventListener("DOMContentLoaded", () => {
         autoFillAllowed = false;
         try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
         fetchDepartures();
-      });
+      };
+      el.addEventListener("mousedown", handleSelection);
+      el.addEventListener("touchstart", handleSelection);
     });
   }
 
@@ -354,7 +356,7 @@ document.addEventListener("DOMContentLoaded", () => {
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-            el.addEventListener("mousedown", function() {
+            const handleSelection = function() {
               const chosenName = el.getAttribute("data-name");
               STOP_NAME = chosenName;
               stopNameEl.innerHTML = formatStopNameHTML(chosenName);
@@ -365,7 +367,9 @@ document.addEventListener("DOMContentLoaded", () => {
               autoFillAllowed = false;
               try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
               fetchDepartures();
-            });
+            };
+            el.addEventListener("mousedown", handleSelection);
+            el.addEventListener("touchstart", handleSelection);
           });
         } else {
           suggestionsContainer.innerHTML = "";
