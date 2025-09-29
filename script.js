@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.29_23.53
+// script.js - Version 2025.09.29_23.59
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -133,6 +133,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Anti-écrasement H1 par la géoloc auto
   let autoFillAllowed = true;
+  
+  // Timer pour le blur des suggestions
+  let blurTimer = null;
 
   // Cache position
   const LAST_FIX_KEY = "lastPositionFix.v1";
@@ -259,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     stopNameEl.addEventListener("blur", function() {
-      setTimeout(() => {
+      blurTimer = setTimeout(() => {
         suggestionsContainer.innerHTML = "";
         suggestionsContainer.style.display = "none";
         currentSuggestionIndex = -1;
@@ -295,6 +298,10 @@ document.addEventListener("DOMContentLoaded", () => {
     currentSuggestionIndex = -1;
     suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
       const handleSelection = () => {
+        if (blurTimer) {
+          clearTimeout(blurTimer);
+          blurTimer = null;
+        }
         const chosenName = el.getAttribute("data-name");
         STOP_NAME = chosenName;
         if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosenName);
@@ -357,6 +364,10 @@ document.addEventListener("DOMContentLoaded", () => {
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
             const handleSelection = function() {
+              if (blurTimer) {
+                clearTimeout(blurTimer);
+                blurTimer = null;
+              }
               const chosenName = el.getAttribute("data-name");
               STOP_NAME = chosenName;
               stopNameEl.innerHTML = formatStopNameHTML(chosenName);
