@@ -1,4 +1,4 @@
-// script.js
+// script.js - Version 2025.09.29_20.16
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
