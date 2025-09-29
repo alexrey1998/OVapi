@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.29_20.16
+// script.js - Version 2025.09.29_23.43
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -689,7 +689,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
-  fullscreenToggleBtn?.addEventListener("click", () => {
+  fullscreenToggleBtn?.addEventListener("click", (e) => {
+    e.stopPropagation(); // Empêche la propagation
     if (document.body.classList.contains("fullscreen")) {
       exitFullscreen();
     } else {
@@ -713,7 +714,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const interactiveElements = [
       ".line-card", ".departure-item", ".line-checkbox", 
       "#quick-actions button", "#thermo-back", ".qa-btn",
-      "#stop-name", "#stop-suggestions div"
+      "#stop-name", "#stop-suggestions div",
+      "#fullscreen-toggle"
     ];
     
     const isInteractive = interactiveElements.some(selector => 
