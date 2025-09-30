@@ -1,5 +1,5 @@
 // sw.js — Option B: CSS/JS en network-first (fallback cache), pas de versionnage d'URL
-const CACHE_VERSION = "tplive-V_2025.09.30_11.57";
+const CACHE_VERSION = "tplive-V_2025.09.30_12.46";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 
 // Précache minimal (pas de CSS/JS pour permettre revalidation)
