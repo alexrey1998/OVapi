@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.30_02.08
+// script.js - Version 2025.09.30_02.14
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -792,11 +792,28 @@ document.addEventListener("DOMContentLoaded", () => {
     const sortedLines = filteredLines.sort(([a], [b]) => {
       const numA = a.split(" ").pop();
       const numB = b.split(" ").pop();
-      const isNumA = !isNaN(numA);
-      const isNumB = !isNaN(numB);
-      if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
+      
+      // Extraire la partie numérique pure (ex: "3A" → 3, "21" → 21)
+      const pureNumA = parseInt(numA.match(/^\d+/)?.[0]);
+      const pureNumB = parseInt(numB.match(/^\d+/)?.[0]);
+      
+      const isNumA = !isNaN(pureNumA);
+      const isNumB = !isNaN(pureNumB);
+      
+      // Si les deux sont des nombres, comparer numériquement
+      if (isNumA && isNumB) {
+        if (pureNumA !== pureNumB) {
+          return pureNumA - pureNumB;
+        }
+        // Si même partie numérique (ex: 3 et 3A), trier alphabétiquement
+        return numA.localeCompare(numB);
+      }
+      
+      // Les nombres avant les lettres
       if (isNumA) return -1;
       if (isNumB) return 1;
+      
+      // Sinon tri alphabétique
       return numA.localeCompare(numB);
     });
 
