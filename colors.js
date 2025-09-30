@@ -192,8 +192,51 @@ export const lineColors = {
   },
 
   PAG: {
-    // Couleur par défaut pour toutes les lignes PAG
+    // Lignes 100-107
+    "100": "#00B5AD",
+    "101": "#5C3317",
+    "102": "#6B7C3A",
+    "103": "#F39200",
+    "104": "#7D2C6E",
+    "105": "#B5BD00",
+    "106": "#D95A34",
+    "107": "#7C9DA6",
+    // Couleur par défaut pour toutes les autres lignes PAG
     "default": "#ffd500"
+  },
+
+  "SVB Auto": {
+    // Lignes urbaines
+    "3": "#A2ACB0",
+    "6": "#0075BE",
+    "7": "#E30613",
+    "8": "#E895BA",
+    "9": "#F1B900",
+    "10": "#00A651",
+    "11": "#00ACD7",
+    "12": "#F39200",
+    "16": "#5BBEB4",
+    "17": "#94A948",
+    "19": "#76264C",
+    "20": "#92165A",
+    "21": "#E5D617",
+    "22": "#A6BCC8",
+    "26": "#F39200",
+    "27": "#5B6633",
+    "28": "#94A948",
+    "29": "#E8736D",
+    "30": "#9EADB5",
+    "31": "#A8C13C",
+    "32": "#5BBEB4",
+    "33": "#6B7C3A",
+    "34": "#5C3317",
+    "36": "#5BBEB4",
+    "40": "#5BBEB4",
+    "41": "#E8736D",
+    "43": "#A6BCC8",
+    "44": "#5B6633",
+    "46": "#A8C13C",
+    "47": "#E8736D"
   },
 
   // Couleurs par catégorie (fallbacks)

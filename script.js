@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.30_01.29
+// script.js - Version 2025.09.30_02.08
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -812,9 +812,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // 1. D'abord chercher couleur par opérateur
       if (operator && lineColors[operator]) {
-        // Chercher d'abord le numéro spécifique, sinon "default"
-        const colorKey = lineColors[operator][content || number] ? (content || number) : "default";
-        if (lineColors[operator][colorKey]) {
+        let colorKey = null;
+        const numOrLetter = content || number;
+        
+        // Chercher d'abord le numéro exact avec lettre (ex: "3A")
+        if (lineColors[operator][numOrLetter]) {
+          colorKey = numOrLetter;
+        }
+        // Si pas trouvé, extraire la partie numérique (ex: "3A" → "3")
+        else {
+          const numericPart = numOrLetter.match(/^\d+/)?.[0];
+          if (numericPart && lineColors[operator][numericPart]) {
+            colorKey = numericPart;
+          }
+          // Sinon utiliser "default"
+          else if (lineColors[operator]["default"]) {
+            colorKey = "default";
+          }
+        }
+        
+        if (colorKey) {
           if (category === "B" || category === "T" || category === "M") {
             content = number || category;
             lineColor = lineColors[operator][colorKey];
