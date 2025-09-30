@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.30_02.14
+// script.js - Version 2025.09.30_02.48
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -82,6 +82,22 @@ function adjustLineBadgePadding(el) {
   } catch { /* ignorer */ }
 }
 
+/* ---------- Gestion mode d'affichage ---------- */
+function hasComma(stopName) {
+  return String(stopName).includes(',');
+}
+
+function loadDisplayMode(stopName) {
+  const key = hasComma(stopName) ? 'displayMode-withComma' : 'displayMode-noComma';
+  const defaultMode = hasComma(stopName) ? 'by-line' : 'by-time';
+  return localStorage.getItem(key) || defaultMode;
+}
+
+function saveDisplayMode(stopName, mode) {
+  const key = hasComma(stopName) ? 'displayMode-withComma' : 'displayMode-noComma';
+  localStorage.setItem(key, mode);
+}
+
 /* ---------- Application ---------- */
 document.addEventListener("DOMContentLoaded", () => {
   // Bannière
@@ -106,6 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const lastUpdateElement = document.getElementById("update-time");
   const filterBox = document.getElementById("line-filter-box");
   const toggleFilterBtn = document.getElementById("toggle-filter");
+  const toggleDisplayBtn = document.getElementById("btn-toggle-display");
 
   // Thermomètre
   const thermo = document.getElementById("thermo-container");
@@ -130,6 +147,15 @@ document.addEventListener("DOMContentLoaded", () => {
   let userLocation = null; // { lat, lon, accuracy? }
   let selectedLines = new Set();
   let expandedLineKey = null;
+  let displayMode = loadDisplayMode(STOP_NAME); // "by-line" ou "by-time"
+  let lastDepartures = []; // Cache des derniers départs
+
+  // Mise à jour icône bouton
+  function updateDisplayButtonIcon() {
+    if (!toggleDisplayBtn) return;
+    toggleDisplayBtn.textContent = displayMode === 'by-line' ? '☰' : '⊞';
+  }
+  updateDisplayButtonIcon();
 
   // Anti-écrasement H1 par la géoloc auto
   let autoFillAllowed = true;
@@ -174,6 +200,8 @@ document.addEventListener("DOMContentLoaded", () => {
           if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
           selectedLines.clear();
           expandedLineKey = null;
+          displayMode = loadDisplayMode(STOP_NAME);
+          updateDisplayButtonIcon();
           try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
           fetchDepartures();
         }
@@ -191,6 +219,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
       selectedLines.clear();
       expandedLineKey = null;
+      displayMode = loadDisplayMode(STOP_NAME);
+      updateDisplayButtonIcon();
       try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
       fetchDepartures();
     };
@@ -198,6 +228,19 @@ document.addEventListener("DOMContentLoaded", () => {
       applyToggle();
     } else if (userLocation) {
       fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, applyToggle);
+    }
+  });
+
+  // Bouton switch mode d'affichage
+  toggleDisplayBtn?.addEventListener("click", () => {
+    displayMode = displayMode === 'by-line' ? 'by-time' : 'by-line';
+    saveDisplayMode(STOP_NAME, displayMode);
+    updateDisplayButtonIcon();
+    expandedLineKey = null;
+    if (displayMode === 'by-line') {
+      renderDepartures(lastDepartures);
+    } else {
+      renderDeparturesByTime(lastDepartures);
     }
   });
 
@@ -252,6 +295,8 @@ document.addEventListener("DOMContentLoaded", () => {
           suggestionsContainer.style.display = "none";
           currentSuggestionIndex = -1;
           autoFillAllowed = false;
+          displayMode = loadDisplayMode(STOP_NAME);
+          updateDisplayButtonIcon();
           try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
           fetchDepartures();
           stopNameEl.blur();
@@ -273,6 +318,8 @@ document.addEventListener("DOMContentLoaded", () => {
         stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
         selectedLines.clear();
         autoFillAllowed = false;
+        displayMode = loadDisplayMode(STOP_NAME);
+        updateDisplayButtonIcon();
         try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
         fetchDepartures();
       }
@@ -310,6 +357,8 @@ document.addEventListener("DOMContentLoaded", () => {
         suggestionsContainer.style.display = "none";
         currentSuggestionIndex = -1;
         autoFillAllowed = false;
+        displayMode = loadDisplayMode(STOP_NAME);
+        updateDisplayButtonIcon();
         try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
         fetchDepartures();
       };
@@ -376,6 +425,8 @@ document.addEventListener("DOMContentLoaded", () => {
               suggestionsContainer.style.display = "none";
               currentSuggestionIndex = -1;
               autoFillAllowed = false;
+              displayMode = loadDisplayMode(STOP_NAME);
+              updateDisplayButtonIcon();
               try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
               fetchDepartures();
             };
@@ -512,6 +563,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
           STOP_NAME = chosen;
           if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+          displayMode = loadDisplayMode(STOP_NAME);
+          updateDisplayButtonIcon();
           fetchDepartures();
         }
         resolve(chosen);
@@ -584,6 +637,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }));
 
+      lastDepartures = departures; // Mise à jour du cache
+
       const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
       lines.sort((a, b) => {
         const numA = a.split(" ").pop();
@@ -616,21 +671,38 @@ document.addEventListener("DOMContentLoaded", () => {
         cb.addEventListener("change", () => {
           if (cb.checked) selectedLines.add(cb.value);
           else selectedLines.delete(cb.value);
-          renderDepartures(departures);
+          if (displayMode === 'by-line') {
+            renderDepartures(departures);
+          } else {
+            renderDeparturesByTime(departures);
+          }
         });
       });
       filterBox.querySelector("#select-all")?.addEventListener("click", () => {
         lines.forEach(l => selectedLines.add(l));
         filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
-        renderDepartures(departures);
+        if (displayMode === 'by-line') {
+          renderDepartures(departures);
+        } else {
+          renderDeparturesByTime(departures);
+        }
       });
       filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
         selectedLines.clear();
         filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
-        renderDepartures(departures);
+        if (displayMode === 'by-line') {
+          renderDepartures(departures);
+        } else {
+          renderDeparturesByTime(departures);
+        }
       });
 
-      renderDepartures(departures);
+      if (displayMode === 'by-line') {
+        renderDepartures(departures);
+      } else {
+        renderDeparturesByTime(departures);
+      }
+      
       const now = new Date();
       if (lastUpdateElement) {
         lastUpdateElement.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -735,7 +807,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Vérifier si le clic est sur un élément interactif
     const interactiveElements = [
-      ".line-card", ".departure-item", ".line-checkbox", 
+      ".line-card", ".departure-card", ".departure-item", ".line-checkbox", 
       "#quick-actions button", "#thermo-back", ".qa-btn",
       "#stop-name", "#stop-suggestions div",
       "#fullscreen-toggle"
@@ -753,6 +825,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderDepartures(departures) {
     departuresContainer.innerHTML = "";
+    departuresContainer.classList.remove("time-mode");
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
 
@@ -962,6 +1035,162 @@ document.addEventListener("DOMContentLoaded", () => {
 
       departuresContainer.appendChild(card);
     }
+  }
+
+  function renderDeparturesByTime(departures) {
+    departuresContainer.innerHTML = "";
+    departuresContainer.classList.add("time-mode");
+    if (thermo) thermo.style.display = "none";
+    departuresContainer.style.display = "";
+
+    const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
+    const nowMs = Date.now();
+    
+    // Créer liste de tous les départs avec infos
+    const allDepartures = [];
+    
+    filtered.forEach(dep => {
+      const schedMs = new Date(dep.stop?.departure).getTime();
+      const delayMin = Number(dep.stop?.delay || 0);
+      const effMs = Number.isFinite(schedMs) ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0) : NaN;
+      const remaining = Number.isFinite(effMs) ? Math.max(0, Math.round((effMs - nowMs) / 60000)) : null;
+
+      if (Number.isFinite(effMs) && (effMs - nowMs) <= DISPLAY_WINDOW_MS) {
+        allDepartures.push({
+          raw: dep,
+          schedMs,
+          effMs,
+          minutesLeft: remaining,
+          timeStr: fmtHM(new Date(schedMs)),
+          platform: (dep.stop?.platform && dep.category !== "GB" && dep.stop.platform !== "null") ? dep.stop.platform : "",
+          delay: (dep.stop && dep.stop.delay !== undefined && dep.stop.delay !== null) ? dep.stop.delay : null,
+          lineKey: `${dep.category || ""} ${dep.number || ""}`,
+          destination: dep.to || "",
+          category: dep.category || "",
+          number: dep.number || "",
+          operator: dep.operator
+        });
+      }
+    });
+
+    // Trier par heure effective
+    allDepartures.sort((a, b) => a.effMs - b.effMs);
+
+    // Créer une carte par départ
+    allDepartures.forEach(depInfo => {
+      const { raw, timeStr, minutesLeft, platform, delay, destination, category, number, operator } = depInfo;
+      
+      // Calculer badge et couleur (même logique que renderDepartures)
+      let content = "";
+      let lineColor = "";
+
+      // 1. D'abord chercher couleur par opérateur
+      if (operator && lineColors[operator]) {
+        let colorKey = null;
+        const numOrLetter = content || number;
+        
+        if (lineColors[operator][numOrLetter]) {
+          colorKey = numOrLetter;
+        } else {
+          const numericPart = numOrLetter.match(/^\d+/)?.[0];
+          if (numericPart && lineColors[operator][numericPart]) {
+            colorKey = numericPart;
+          } else if (lineColors[operator]["default"]) {
+            colorKey = "default";
+          }
+        }
+        
+        if (colorKey) {
+          if (category === "B" || category === "T" || category === "M") {
+            content = number || category;
+            lineColor = lineColors[operator][colorKey];
+          } else if (category === "FUN") {
+            content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
+            lineColor = lineColors[operator][colorKey];
+          }
+        }
+      }
+
+      // 2. Si pas trouvé, logique par catégorie
+      if (!lineColor) {
+        if (category === "B" || category === "T" || category === "M") {
+          content = number || category;
+          lineColor = lineColors.categories.default;
+        } else if (category === "BAT") {
+          content = number && !number.startsWith("0") ? `BAT ${number}` : "BAT";
+          lineColor = lineColors.categories.default;
+        } else if (category === "FUN") {
+          content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
+          lineColor = lineColors.categories.default;
+        } else if (category === "GB") {
+          content = "🚠";
+          lineColor = lineColors.categories.GB;
+        } else if (lineColors.categories.trains.includes(category)) {
+          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
+          lineColor = lineColors.categories.trainsColor;
+        } else {
+          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
+          lineColor = lineColors[content] || lineColors.categories.trainsColor;
+        }
+      }
+
+      const card = document.createElement("div");
+      card.className = "departure-card";
+      
+      // Badge ligne
+      const badge = document.createElement("span");
+      badge.className = "line-badge";
+      badge.style.backgroundColor = lineColor;
+      badge.textContent = content;
+      card.appendChild(badge);
+      adjustLineBadgePadding(badge);
+
+      // Conteneur infos
+      const infoDiv = document.createElement("div");
+      infoDiv.className = "departure-info";
+
+      // Heure
+      const timeSpan = document.createElement("span");
+      timeSpan.className = "departure-time";
+      let delayStr = "";
+      if (delay !== null && (delay <= -2 || delay >= 2)) {
+        const d = Math.abs(delay);
+        const sign = delay >= 0 ? "+" : "-";
+        delayStr = d >= 5 ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
+      }
+      timeSpan.innerHTML = `${timeStr}${delayStr}`;
+      infoDiv.appendChild(timeSpan);
+
+      // Minutes restantes
+      const countdownSpan = document.createElement("span");
+      countdownSpan.className = "departure-countdown";
+      countdownSpan.textContent = `(${minutesLeft} min)`;
+      infoDiv.appendChild(countdownSpan);
+
+      // Destination
+      const destSpan = document.createElement("span");
+      destSpan.className = "departure-destination";
+      const suffixAirport = (destination === "Zürich Flughafen" || destination === "Genève-Aéroport") ? " ✈" : "";
+      destSpan.innerHTML = formatStopNameHTML(destination) + escapeHtml(suffixAirport);
+      infoDiv.appendChild(destSpan);
+
+      // Plateforme
+      if (platform) {
+        const platformSpan = document.createElement("span");
+        platformSpan.className = "departure-platform";
+        platformSpan.textContent = `pl. ${platform}`;
+        infoDiv.appendChild(platformSpan);
+      }
+
+      card.appendChild(infoDiv);
+
+      // Click → thermomètre
+      card.addEventListener("click", () => {
+        showThermometer(STOP_NAME, destination, timeStr, content);
+      });
+
+      departuresContainer.appendChild(card);
+    });
   }
 
   async function showThermometer(fromName, toName, hhmm, lineLabel) {
