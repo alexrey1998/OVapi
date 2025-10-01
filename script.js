@@ -344,30 +344,27 @@ document.addEventListener("DOMContentLoaded", () => {
     suggestionsContainer.style.display = "block";
     currentSuggestionIndex = -1;
     suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-      const handleSelection = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      const handleSelection = () => {
         if (blurTimer) {
           clearTimeout(blurTimer);
           blurTimer = null;
         }
-        // Masquer immédiatement les suggestions
-        suggestionsContainer.innerHTML = "";
-        suggestionsContainer.style.display = "none";
-        currentSuggestionIndex = -1;
-        
         const chosenName = el.getAttribute("data-name");
         STOP_NAME = chosenName;
         if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosenName);
         selectedLines.clear();
+        suggestionsContainer.innerHTML = "";
+        suggestionsContainer.style.display = "none";
+        currentSuggestionIndex = -1;
         autoFillAllowed = false;
         displayMode = loadDisplayMode(STOP_NAME);
         updateDisplayButtonIcon();
         try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
         fetchDepartures();
+        if (stopNameEl) stopNameEl.blur();
       };
       el.addEventListener("mousedown", handleSelection);
-      el.addEventListener("touchstart", handleSelection, { passive: false });
+      el.addEventListener("touchstart", handleSelection);
     });
   }
 
@@ -416,30 +413,27 @@ document.addEventListener("DOMContentLoaded", () => {
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-            const handleSelection = function(e) {
-              e.preventDefault();
-              e.stopPropagation();
+            const handleSelection = function() {
               if (blurTimer) {
                 clearTimeout(blurTimer);
                 blurTimer = null;
               }
-              // Masquer immédiatement les suggestions
-              suggestionsContainer.innerHTML = "";
-              suggestionsContainer.style.display = "none";
-              currentSuggestionIndex = -1;
-              
               const chosenName = el.getAttribute("data-name");
               STOP_NAME = chosenName;
               stopNameEl.innerHTML = formatStopNameHTML(chosenName);
               selectedLines.clear();
+              suggestionsContainer.innerHTML = "";
+              suggestionsContainer.style.display = "none";
+              currentSuggestionIndex = -1;
               autoFillAllowed = false;
               displayMode = loadDisplayMode(STOP_NAME);
               updateDisplayButtonIcon();
               try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
               fetchDepartures();
+              stopNameEl.blur();
             };
             el.addEventListener("mousedown", handleSelection);
-            el.addEventListener("touchstart", handleSelection, { passive: false });
+            el.addEventListener("touchstart", handleSelection);
           });
         } else {
           suggestionsContainer.innerHTML = "";
