@@ -1,4 +1,4 @@
-// script.js - Version 2025.09.30_02.48
+// script.js - Version 2025.10.01_12.12
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 
@@ -344,7 +344,9 @@ document.addEventListener("DOMContentLoaded", () => {
     suggestionsContainer.style.display = "block";
     currentSuggestionIndex = -1;
     suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-      const handleSelection = () => {
+      const handleSelection = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         if (blurTimer) {
           clearTimeout(blurTimer);
           blurTimer = null;
@@ -413,7 +415,9 @@ document.addEventListener("DOMContentLoaded", () => {
           suggestionsContainer.style.display = "block";
           currentSuggestionIndex = -1;
           suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-            const handleSelection = function() {
+            const handleSelection = function(e) {
+              e.preventDefault();
+              e.stopPropagation();
               if (blurTimer) {
                 clearTimeout(blurTimer);
                 blurTimer = null;
