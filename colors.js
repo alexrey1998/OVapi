@@ -1,7 +1,6 @@
+// colors.js
 export const lineColors = {
-  // Opérateurs pour bus/trams/métros
   TPG: {
-    // Bus TPG (lignes 1-11 et 19+)
     "1": "#5A1E82",
     "2": "#D2DB4A",
     "3": "#B82F89",
@@ -64,13 +63,11 @@ export const lineColors = {
     "271": "#FFDC00",
     "272": "#00B0A4",
     "274": "#EC619F",
-    // Trams TPG (lignes 12-18)
     "12": "#F5A300",
     "14": "#5A1E82",
     "15": "#84471C",
     "17": "#00ACE7",
     "18": "#B82F89",
-    // Bus TPG lignes alphabétiques
     "A": "#FF7E00",
     "C1": "#000000",
     "C3": "#000000",
@@ -91,20 +88,15 @@ export const lineColors = {
   },
   
   TL: {
-    // LEB et métros
     "R20": "#58B947",
     "m1": "#EC008C",
     "m2": "#EC008C",
-    
-    // Bus de nuit (fond noir, texte jaune)
     "N1": "#231F20",
     "N2": "#231F20", 
     "N3": "#231F20",
     "N4": "#231F20",
     "N5": "#231F20",
     "N6": "#231F20",
-    
-    // Bus réguliers
     "1": "#F2665E",
     "2": "#FCAF17",
     "3": "#939598",
@@ -149,7 +141,6 @@ export const lineColors = {
   },
   
   TPN: {
-    // Bus TPN (Nyon)
     "803": "#E53E3E",
     "804": "#38A169", 
     "805": "#DD6B20",
@@ -163,16 +154,12 @@ export const lineColors = {
   },
   
   "MBC-cg": {
-    // Funiculaire
     "2003": "#A0A0A0"
   },
 
   "MBC Auto": {
-    // Trains régionaux
     "R56": "#02B646", 
     "R57": "#006A28",
-    
-    // Bus
     "701": "#004D21",
     "702": "#F58F00", 
     "703": "#611E83",
@@ -192,7 +179,6 @@ export const lineColors = {
   },
 
   PAG: {
-    // Lignes 100-107
     "100": "#00B5AD",
     "101": "#5C3317",
     "102": "#6B7C3A",
@@ -201,12 +187,10 @@ export const lineColors = {
     "105": "#B5BD00",
     "106": "#D95A34",
     "107": "#7C9DA6",
-    // Couleur par défaut pour toutes les autres lignes PAG
     "default": "#ffd500"
   },
 
   "SVB Auto": {
-    // Lignes urbaines
     "3": "#A2ACB0",
     "6": "#0075BE",
     "7": "#E30613",
@@ -239,7 +223,6 @@ export const lineColors = {
     "47": "#E8736D"
   },
 
-  // Couleurs par catégorie (fallbacks)
   categories: {
     trains: ["R", "S", "RN", "SN", "RE", "IR", "IC", "ICE", "EC", "TGV", "PE", "NJ", "EXT", "TER", "RER"],
     trainsColor: "#eb0000",
@@ -247,6 +230,5 @@ export const lineColors = {
     default: "#007bff"
   },
 
-  // BAT conservé pour compatibilité
   "BAT": "#007bff"
 };

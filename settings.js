@@ -1,20 +1,15 @@
+// settings.js
 export const settings = {
-  // Nombre de départs à récupérer auprès de l'API stationboard
+  // Nombre max de départs récupérés depuis l'API
   stationboardLimit: 150,
-
-  // Période d'affichage max des départs (hh:mm:ss)
+  // Période max d'affichage des départs (format hh:mm:ss)
   maxDisplayPeriod: "06:30:00",
-
-  // Intervalle de rafraîchissement des données (hh:mm:ss)
+  // Intervalle de rafraîchissement automatique (format hh:mm:ss)
   refreshInterval: "00:01:00",
-
-  // Style des noms contenant une virgule: "Préfixe, " + "Suffixe"
   stopName: {
-    // Taille du PRÉFIXE en pourcentage de la taille normale
-    // Le SUFFIXE reste à 100%
+    // Taille du préfixe (avant la virgule) en % de la taille normale
     prefixScalePct: 80,
-    // Couleur du SUFFIXE (et de tout le nom s'il n'y a pas de virgule).
-    // "default" = couleur par défaut du texte. Sinon, toute valeur CSS valide "blue", "#008000", etc.
+    // Couleur du suffixe (après la virgule) - "default" ou valeur CSS valide
     suffixColor: "#2d327d"
   }
 };

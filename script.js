@@ -1,8 +1,6 @@
-// script.js - Version 2025.10.01_12.12
+// script.js
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
-
-/* ---------- Helpers paramétrables ---------- */
 function getInt(val, dflt) {
   const n = Number(val);
   return Number.isFinite(n) && n > 0 ? n : dflt;
@@ -18,9 +16,8 @@ function parseHMStoMs(hms, dfltMs) {
 const DISPLAY_WINDOW_MS = parseHMStoMs(settings.maxDisplayPeriod, 90 * 60 * 1000);
 const REFRESH_MS = parseHMStoMs(settings.refreshInterval, 60 * 1000);
 const STATIONBOARD_LIMIT = getInt(settings.stationboardLimit, 30);
-
-/* ---------- Données Suisses (CSV) ---------- */
 let swissStationsSet = new Set();
+let stationDeparturesCache = {};
 fetch("swiss_stations.csv")
   .then(r => r.text())
   .then(txt => {
@@ -31,8 +28,6 @@ fetch("swiss_stations.csv")
   })
   .catch(e => console.error("Erreur CSV gares suisses", e));
 function isSwissStation(name) { return swissStationsSet.has(name); }
-
-/* ---------- Utilitaires ---------- */
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -62,8 +57,6 @@ function computeDistance(lat1, lon1, lat2, lon2) {
     Math.sin(dLon/2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-
-/* Mesure de texte pour ajuster le padding horizontal des badges */
 const __badgeCanvas = document.createElement("canvas");
 const __badgeCtx = __badgeCanvas.getContext("2d");
 function adjustLineBadgePadding(el) {
@@ -79,10 +72,8 @@ function adjustLineBadgePadding(el) {
     const pad = base + extra;
     el.style.paddingLeft = pad + "px";
     el.style.paddingRight = pad + "px";
-  } catch { /* ignorer */ }
+  } catch { }
 }
-
-/* ---------- Gestion mode d'affichage ---------- */
 function hasComma(stopName) {
   return String(stopName).includes(',');
 }
@@ -97,25 +88,7 @@ function saveDisplayMode(stopName, mode) {
   const key = hasComma(stopName) ? 'displayMode-withComma' : 'displayMode-noComma';
   localStorage.setItem(key, mode);
 }
-
-/* ---------- Application ---------- */
 document.addEventListener("DOMContentLoaded", () => {
-  // Bannière
-  if (localStorage.getItem("bannerClosed") === "true") {
-    const banner = document.getElementById("banner");
-    if (banner) banner.style.display = "none";
-  } else {
-    const closeButton = document.getElementById("banner-close");
-    if (closeButton) {
-      closeButton.addEventListener("click", () => {
-        const banner = document.getElementById("banner");
-        if (banner) banner.style.display = "none";
-        localStorage.setItem("bannerClosed", "true");
-      });
-    }
-  }
-
-  // Eléments
   const stopNameEl = document.getElementById("stop-name");
   const suggestionsContainer = document.getElementById("stop-suggestions");
   const departuresContainer = document.getElementById("departures");
@@ -123,8 +96,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const filterBox = document.getElementById("line-filter-box");
   const toggleFilterBtn = document.getElementById("toggle-filter");
   const toggleDisplayBtn = document.getElementById("btn-toggle-display");
-
-  // Thermomètre
   const thermo = document.getElementById("thermo-container");
   if (thermo) {
     thermo.innerHTML = `
@@ -139,31 +110,21 @@ document.addEventListener("DOMContentLoaded", () => {
       departuresContainer.style.display = "";
     });
   }
-
-  // Etat
   let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || "Entrez le nom de l'arrêt ici") : "Entrez le nom de l'arrêt ici";
   if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
   let currentSuggestionIndex = -1;
-  let userLocation = null; // { lat, lon, accuracy? }
+  let userLocation = null;
   let selectedLines = new Set();
   let expandedLineKey = null;
-  let displayMode = loadDisplayMode(STOP_NAME); // "by-line" ou "by-time"
-  let lastDepartures = []; // Cache des derniers départs
-
-  // Mise à jour icône bouton
+  let displayMode = loadDisplayMode(STOP_NAME);
+  let lastDepartures = [];
   function updateDisplayButtonIcon() {
     if (!toggleDisplayBtn) return;
     toggleDisplayBtn.textContent = displayMode === 'by-line' ? '☰' : '⊞';
   }
   updateDisplayButtonIcon();
-
-  // Anti-écrasement H1 par la géoloc auto
   let autoFillAllowed = true;
-  
-  // Timer pour le blur des suggestions
   let blurTimer = null;
-
-  // Cache position
   const LAST_FIX_KEY = "lastPositionFix.v1";
   function saveLastFix(loc) {
     try {
@@ -183,12 +144,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return { lat: o.lat, lon: o.lon, accuracy: o.accuracy ?? null };
     } catch { return null; }
   }
-
-  // Listes proches
-  let nearbyRaw = [];   // résultats complets de /locations triés par distance
-  let nearbyStops = []; // seulement stations avec id, triées par distance
-
-  // Quick-actions
+  let nearbyRaw = [];
+  let nearbyStops = [];
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
 
   document.getElementById("btn-gps")?.addEventListener("click", () => {
@@ -206,7 +163,7 @@ document.addEventListener("DOMContentLoaded", () => {
           fetchDepartures();
         }
       });
-    }, true); // frais, pas de watch ici
+    }, true);
   });
 
   document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
@@ -230,8 +187,6 @@ document.addEventListener("DOMContentLoaded", () => {
       fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, applyToggle);
     }
   });
-
-  // Bouton switch mode d'affichage
   toggleDisplayBtn?.addEventListener("click", () => {
     displayMode = displayMode === 'by-line' ? 'by-time' : 'by-line';
     saveDisplayMode(STOP_NAME, displayMode);
@@ -243,8 +198,6 @@ document.addEventListener("DOMContentLoaded", () => {
       renderDeparturesByTime(lastDepartures);
     }
   });
-
-  // Saisie nom d'arrêt + suggestions
   if (stopNameEl) {
     stopNameEl.addEventListener("click", function() {
       const plain = stopNameEl.textContent;
@@ -255,13 +208,13 @@ document.addEventListener("DOMContentLoaded", () => {
             showNearbyStopsSuggestions();
           });
         }
-      }); // position suffisante pour l'autocomplétion
+      });
       this.focus();
     });
 
     stopNameEl.addEventListener("input", function() {
       currentSuggestionIndex = -1;
-      autoFillAllowed = false; // l'utilisateur saisit → ne pas écraser H1
+      autoFillAllowed = false;
       const q = this.textContent.trim();
       if (q.length > 0) {
         fetchSuggestions(q);
@@ -330,7 +283,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const items = suggestionsContainer.querySelectorAll("div[data-name]");
     items.forEach((el, idx) => el.classList.toggle("selected", idx === currentSuggestionIndex));
   }
-
   function showNearbyStopsSuggestions() {
     if (document.activeElement !== stopNameEl || stopNameEl.textContent.trim() !== "") return;
     if (!nearbyStops.length) {
@@ -369,8 +321,6 @@ document.addEventListener("DOMContentLoaded", () => {
       el.addEventListener("touchstart", handleSelection);
     });
   }
-
-  /* ===== Suggestions géolocalisées ===== */
   function hasValidCoord(s) {
     return s && s.coordinate && Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
   }
@@ -447,8 +397,6 @@ document.addEventListener("DOMContentLoaded", () => {
       })
       .catch(err => console.error("Erreur suggestions", err));
   }
-
-  /* ===== Géoloc fraîche + amélioration par watch (version améliorée) ===== */
   function updateUserLocation(cb, opts = false) {
     if (!navigator.geolocation) { if (cb) cb(); return; }
 
@@ -482,8 +430,6 @@ document.addEventListener("DOMContentLoaded", () => {
       try { if (userLocation) saveLastFix(userLocation); } catch {} 
       finishFinalOnce(); 
     };
-
-    // Timer pour callback rapide (2 secondes max)
     const quickTimer = setTimeout(() => {
       if (userLocation) finishQuickOnce();
     }, 2000);
@@ -495,8 +441,6 @@ document.addEventListener("DOMContentLoaded", () => {
           lon: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
-
-        // Déclencher callback rapide si pas encore fait
         if (!quickDone) {
           clearTimeout(quickTimer);
           finishQuickOnce();
@@ -516,7 +460,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const timeoutId = setTimeout(() => {
           stopWatch();
           finalize();
-        }, 8000); // timeout total à 8 secondes
+        }, 8000);
 
         watchId = navigator.geolocation.watchPosition(
           p => {
@@ -546,17 +490,12 @@ document.addEventListener("DOMContentLoaded", () => {
       { enableHighAccuracy: true, maximumAge: fresh ? 0 : 15000, timeout: 8000 }
     );
   }
-
-  // Fonction d'assistance pour le remplissage d'arrêt
   async function findAndFillBestStop() {
     if (!userLocation || !autoFillAllowed || STOP_NAME !== "Entrez le nom de l'arrêt ici") {
       return;
     }
-
-    // Récupérer suggestions basées sur position
     return new Promise((resolve) => {
       fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async () => {
-        // Chercher le 1er arrêt avec des départs
         let chosen = null;
         for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
           const candidate = nearbyStops[i].name;
@@ -564,8 +503,6 @@ document.addEventListener("DOMContentLoaded", () => {
           if (ok) { chosen = candidate; break; }
         }
         if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
-
-        // Vérifier à nouveau si toujours autorisé
         if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
           STOP_NAME = chosen;
           if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
@@ -577,25 +514,29 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
-
-  // Ajustement destination trains internationaux
   async function adjustTrainDestination(dep) {
-    const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
     try {
-      const locData = await fetch(locURL).then(r => r.json());
-      const station = locData.stations && locData.stations[0];
-      if (!station) return dep.to; // Garde l'original si station introuvable
-      
-      const stationId = station.id;
-      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}&limit=5`;
-      const data = await fetch(url).then(r => r.json());
-      const departures = data.stationboard || [];
-      const currentName = parseInt(dep.name);
-      
+      const stationKey = dep.to;
+
+      if (!stationDeparturesCache[stationKey]) {
+        const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
+        const locData = await fetch(locURL).then(r => r.json());
+        const station = locData.stations && locData.stations[0];
+        if (!station) return dep.to;
+
+        const stationId = station.id;
+        const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}`;
+        const data = await fetch(url).then(r => r.json());
+        stationDeparturesCache[stationKey] = data.stationboard || [];
+      }
+
+      const departures = stationDeparturesCache[stationKey];
+      const currentName = dep.name;
+
       for (const other of departures) {
-        const otherName = parseInt(other.name);
-        if (otherName === currentName || otherName === currentName + 1) {
+        if (other.name === currentName) {
           if (other.to && other.to !== dep.to && !isSwissStation(other.to)) {
+            console.log(`Ajustement: Train ${currentName} de ${dep.to} → ${other.to}`);
             return other.to;
           }
         }
@@ -603,7 +544,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       console.error("Ajustement destination", dep.to, e);
     }
-    return dep.to; // Retourne l'original si rien trouvé ou en cas d'erreur
+    return dep.to;
   }
 
   async function checkDeparturesForStop(stopNameCandidate) {
@@ -622,8 +563,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return false;
     }
   }
-
-  // Récupération + rendu
   async function fetchDepartures() {
     const key = STOP_NAME;
     if (!key || String(key).trim() === "") return;
@@ -633,17 +572,15 @@ document.addEventListener("DOMContentLoaded", () => {
       let departures = (data && data.stationboard) ? data.stationboard : [];
 
       await Promise.all(departures.map(async dep => {
-        // Ajuster les destinations internationales pour les trains
-        if (dep.to && 
-            dep.to.indexOf(",") === -1 && 
-            !isSwissStation(dep.to) && 
+        if (!hasComma(STOP_NAME) &&
+            dep.to &&
+            !isSwissStation(dep.to) &&
             lineColors.categories.trains.includes(dep.category)) {
           const adjusted = await adjustTrainDestination(dep);
           if (adjusted) dep.to = adjusted;
         }
       }));
-
-      lastDepartures = departures; // Mise à jour du cache
+      lastDepartures = departures;
 
       const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
       lines.sort((a, b) => {
@@ -758,17 +695,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Escape" && document.body.classList.contains("filters-open")) closeFilterModal();
   });
 
-  // Gestion plein écran améliorée
   function isMobileDevice() {
     return window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
 
   function enterFullscreen() {
     if (isMobileDevice()) {
-      // Mode plein écran simulé pour mobile
       document.body.classList.add("fullscreen");
     } else {
-      // Vrai plein écran navigateur pour desktop
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen();
       }
@@ -778,10 +712,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function exitFullscreen() {
     if (isMobileDevice()) {
-      // Sortie mode simulé mobile
       document.body.classList.remove("fullscreen");
     } else {
-      // Sortie vrai plein écran desktop
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen();
       }
@@ -791,7 +723,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
   fullscreenToggleBtn?.addEventListener("click", (e) => {
-    e.stopPropagation(); // Empêche la propagation
+    e.stopPropagation();
     if (document.body.classList.contains("fullscreen")) {
       exitFullscreen();
     } else {
@@ -799,19 +731,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Gestion des événements plein écran desktop
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement) {
       document.body.classList.remove("fullscreen");
     }
   });
 
-  // Gestion clic pour sortir du plein écran mobile
   document.addEventListener("click", (e) => {
     if (!document.body.classList.contains("fullscreen")) return;
     if (!isMobileDevice()) return;
 
-    // Vérifier si le clic est sur un élément interactif
     const interactiveElements = [
       ".line-card", ".departure-card", ".departure-item", ".line-checkbox", 
       "#quick-actions button", "#thermo-back", ".qa-btn",
@@ -823,7 +752,6 @@ document.addEventListener("DOMContentLoaded", () => {
       e.target.closest(selector)
     );
 
-    // Si ce n'est pas un élément interactif, sortir du plein écran
     if (!isInteractive) {
       exitFullscreen();
     }
@@ -863,7 +791,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // Filtrer les lignes qui ont au moins un départ à afficher
     const filteredLines = Object.entries(groupedByLine).filter(([lineKey, destinations]) => {
       return Object.values(destinations).some(times => times.length > 0);
     });
@@ -872,27 +799,22 @@ document.addEventListener("DOMContentLoaded", () => {
       const numA = a.split(" ").pop();
       const numB = b.split(" ").pop();
       
-      // Extraire la partie numérique pure (ex: "3A" → 3, "21" → 21)
       const pureNumA = parseInt(numA.match(/^\d+/)?.[0]);
       const pureNumB = parseInt(numB.match(/^\d+/)?.[0]);
       
       const isNumA = !isNaN(pureNumA);
       const isNumB = !isNaN(pureNumB);
       
-      // Si les deux sont des nombres, comparer numériquement
       if (isNumA && isNumB) {
         if (pureNumA !== pureNumB) {
           return pureNumA - pureNumB;
         }
-        // Si même partie numérique (ex: 3 et 3A), trier alphabétiquement
         return numA.localeCompare(numB);
       }
       
-      // Les nombres avant les lettres
       if (isNumA) return -1;
       if (isNumB) return 1;
       
-      // Sinon tri alphabétique
       return numA.localeCompare(numB);
     });
 
@@ -902,31 +824,21 @@ document.addEventListener("DOMContentLoaded", () => {
       let content = "";
       let lineColor = "";
 
-      // Récupérer le premier départ pour obtenir l'opérateur
       const firstDep = Object.values(destinations)[0]?.[0]?.raw;
       const operator = firstDep?.operator;
-
-      // 1. D'abord chercher couleur par opérateur
       if (operator && lineColors[operator]) {
         let colorKey = null;
         const numOrLetter = content || number;
-        
-        // Chercher d'abord le numéro exact avec lettre (ex: "3A")
         if (lineColors[operator][numOrLetter]) {
           colorKey = numOrLetter;
-        }
-        // Si pas trouvé, extraire la partie numérique (ex: "3A" → "3")
-        else {
+        } else {
           const numericPart = numOrLetter.match(/^\d+/)?.[0];
           if (numericPart && lineColors[operator][numericPart]) {
             colorKey = numericPart;
-          }
-          // Sinon utiliser "default"
-          else if (lineColors[operator]["default"]) {
+          } else if (lineColors[operator]["default"]) {
             colorKey = "default";
           }
         }
-        
         if (colorKey) {
           if (category === "B" || category === "T" || category === "M") {
             content = number || category;
@@ -938,7 +850,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      // 2. Si pas trouvé, logique par catégorie
       if (!lineColor) {
         if (category === "B" || category === "T" || category === "M") {
           content = number || category;
@@ -956,7 +867,6 @@ document.addEventListener("DOMContentLoaded", () => {
           content = number && !number.startsWith("0") ? `${category} ${number}` : category;
           lineColor = lineColors.categories.trainsColor;
         } else {
-          // Fallback pour les couleurs directes (trains spéciaux)
           content = number && !number.startsWith("0") ? `${category} ${number}` : category;
           lineColor = lineColors[content] || lineColors.categories.trainsColor;
         }
@@ -1052,7 +962,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
     const nowMs = Date.now();
     
-    // Créer liste de tous les départs avec infos
     const allDepartures = [];
     
     filtered.forEach(dep => {
@@ -1079,18 +988,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // Trier par heure effective
     allDepartures.sort((a, b) => a.effMs - b.effMs);
 
-    // Créer une carte par départ
     allDepartures.forEach(depInfo => {
       const { raw, timeStr, minutesLeft, platform, delay, destination, category, number, operator } = depInfo;
       
-      // Calculer badge et couleur (même logique que renderDepartures)
       let content = "";
       let lineColor = "";
 
-      // 1. D'abord chercher couleur par opérateur
       if (operator && lineColors[operator]) {
         let colorKey = null;
         const numOrLetter = content || number;
@@ -1117,7 +1022,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      // 2. Si pas trouvé, logique par catégorie
       if (!lineColor) {
         if (category === "B" || category === "T" || category === "M") {
           content = number || category;
@@ -1143,7 +1047,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const card = document.createElement("div");
       card.className = "departure-card";
       
-      // Badge ligne
       const badge = document.createElement("span");
       badge.className = "line-badge";
       badge.style.backgroundColor = lineColor;
@@ -1151,11 +1054,9 @@ document.addEventListener("DOMContentLoaded", () => {
       card.appendChild(badge);
       adjustLineBadgePadding(badge);
 
-      // Conteneur infos
       const infoDiv = document.createElement("div");
       infoDiv.className = "departure-info";
 
-      // Heure
       const timeSpan = document.createElement("span");
       timeSpan.className = "departure-time";
       let delayStr = "";
@@ -1167,20 +1068,17 @@ document.addEventListener("DOMContentLoaded", () => {
       timeSpan.innerHTML = `${timeStr}${delayStr}`;
       infoDiv.appendChild(timeSpan);
 
-      // Minutes restantes
       const countdownSpan = document.createElement("span");
       countdownSpan.className = "departure-countdown";
       countdownSpan.textContent = `(${minutesLeft} min)`;
       infoDiv.appendChild(countdownSpan);
 
-      // Destination
       const destSpan = document.createElement("span");
       destSpan.className = "departure-destination";
       const suffixAirport = (destination === "Zürich Flughafen" || destination === "Genève-Aéroport") ? " ✈" : "";
       destSpan.innerHTML = formatStopNameHTML(destination) + escapeHtml(suffixAirport);
       infoDiv.appendChild(destSpan);
 
-      // Plateforme
       if (platform) {
         const platformSpan = document.createElement("span");
         platformSpan.className = "departure-platform";
@@ -1190,7 +1088,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       card.appendChild(infoDiv);
 
-      // Click → thermomètre
       card.addEventListener("click", () => {
         showThermometer(STOP_NAME, destination, timeStr, content);
       });
@@ -1263,24 +1160,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Démarrage — remplissage rapide puis amélioration continue
   (async () => {
-    // Amorçage suggestions via cache position (ne touche pas H1)
     const cached = loadLastFix();
     if (cached) {
-      fetchSuggestionsByLocation(cached.lon, cached.lat, () => {
-        // uniquement pour remplir nearbyStops rapidement
-      });
+      fetchSuggestionsByLocation(cached.lon, cached.lat, () => {});
     }
 
     if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
       updateUserLocation(
-        // Callback final (8 secondes max)
         () => findAndFillBestStop(),
         {
           fresh: true,
           withWatch: true,
-          // Callback rapide (2 secondes max)
           quickCallback: () => findAndFillBestStop()
         }
       );

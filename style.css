@@ -1,11 +1,9 @@
-/* Réinitialiser marges, padding et box-sizing */
+/* style.css */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
-
-/* Fond clair et police lisible */
 body {
   font-family: Arial, sans-serif;
   background-color: #f4f4f4;
@@ -14,39 +12,14 @@ body {
   padding: 20px;
 }
 
-/* H1 éditable + placeholder quand vide */
 #stop-name[contenteditable="true"] { outline: none; cursor: text; }
 #stop-name:empty::before { content: "Entrez le nom de l'arrêt ici"; color: #9ca3af; }
 
-/* Bannière */
-#banner {
-  background-color: #eb0000;
-  color: #ffffff;
-  padding: 10px;
-  text-align: center;
-  position: relative;
-  border-bottom: 1px solid #ccc;
-}
-#banner p { margin: 0; }
-#banner button {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  background: transparent;
-  border: none;
-  font-size: 30px;
-  line-height: 30px;
-  cursor: pointer;
-  color: #ffffff;
-}
-
-/* Titre */
 h1 {
   font-size: 1.8rem;
   margin-bottom: 20px;
 }
 
-/* Suggestions */
 #stop-suggestions {
   border: 1px solid #ccc;
   background: #fff;
@@ -63,7 +36,6 @@ h1 {
   background-color: #f0f0f0;
 }
 
-/* Barre de contrôle */
 #control-bar {
   display: flex;
   align-items: stretch;
@@ -72,7 +44,6 @@ h1 {
   flex-wrap: wrap;
 }
 
-/* Boîte de mise à jour bleue avec actions à droite */
 #last-update {
   display: flex;
   align-items: center;
@@ -105,7 +76,6 @@ h1 {
 }
 #last-update #quick-actions button:hover { background: #f5f7fb; }
 
-/* Boutons (filtre, plein écran) */
 #toggle-filter,
 #fullscreen-toggle {
   padding: 10px 14px;
@@ -121,7 +91,6 @@ h1 {
   background-color: #0056b3;
 }
 
-/* Boîte des filtres */
 #line-filter-box {
   background: white;
   border: 1px solid #ddd;
@@ -137,7 +106,6 @@ h1 {
   margin-bottom: 5px;
 }
 
-/* Quick actions générique (hors #last-update, si réutilisé) */
 #quick-actions {
   display: inline-flex;
   gap: 8px;
@@ -158,21 +126,18 @@ h1 {
 #quick-actions button:hover,
 .qa-btn:hover { background: #f5f7fb; }
 
-/* Conteneur des départs : grille responsive par défaut */
 #departures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
 }
 
-/* Mode "par départ" : affichage vertical strict */
 #departures.time-mode {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* Carte par ligne */
 .line-card {
   background: white;
   padding: 14px;
@@ -187,7 +152,6 @@ h1 {
   cursor: pointer;
 }
 
-/* Carte en mode "par départ" : layout horizontal */
 .departure-card {
   background: white;
   padding: 14px;
@@ -243,7 +207,6 @@ h1 {
   color: #eb0000;
 }
 
-/* En-tête ligne */
 .line-row {
   display: flex;
   align-items: center;
@@ -251,21 +214,19 @@ h1 {
   margin-bottom: 6px;
 }
 
-/* Badge de ligne – rectangulaire, texte blanc, police plus grande et grasse */
 .line-badge {
   display: inline-block;
   color: #fff;
   font-weight: 700;
   font-size: 1.35rem;
   line-height: 1;
-  padding: 6px 12px;           /* sera ajusté en JS (horizontaux) */
-  border-radius: 8px;          /* rectangle arrondi */
+  padding: 6px 12px;
+  border-radius: 8px;
   min-width: 42px;
   text-align: center;
   font-family: inherit;
 }
 
-/* Minutes (mode compact) – pastilles discrets */
 .countdown-strip {
   display: flex;
   flex-wrap: wrap;
@@ -276,15 +237,14 @@ h1 {
   background: #f3f4f6;
   border-radius: 6px;
   padding: 2px 6px;
-  color: #555;               /* minutes suivantes atténuées */
+  color: #555;
   font-weight: 400;
 }
 .countdown-strip .cd.first {
-  color: #000;               /* prochain départ en noir gras */
+  color: #000;
   font-weight: 700;
 }
 
-/* Mode développé */
 .destination-title {
   font-size: 1.05rem;
   font-weight: 700;
@@ -306,10 +266,8 @@ h1 {
 }
 .departure-item .late { color: #eb0000; }
 
-/* Etat visuel */
 .line-card.compact .departure-times { display: none; }
 
-/* Plein écran */
 body.fullscreen #toggle-filter,
 body.fullscreen #fullscreen-toggle { 
   display: none !important; 
@@ -324,7 +282,6 @@ body.fullscreen {
 }
 body.fullscreen::-webkit-scrollbar { display: none; }
 
-/* Modal filtre */
 body.filters-open::before {
   content: "";
   position: fixed;
@@ -364,7 +321,6 @@ body.filters-open::before {
 }
 #filter-close:hover { color: #555; }
 
-/* Thermomètre */
 #thermo-container {
   display: none;
   background: #fff;

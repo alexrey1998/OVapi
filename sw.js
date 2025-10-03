@@ -1,8 +1,6 @@
-// sw.js — Option B: CSS/JS en network-first (fallback cache), pas de versionnage d'URL
-const CACHE_VERSION = "tplive-V_2025.09.30_02.48";
+// sw.js
+const CACHE_VERSION = "tplive-V_2025.10.01.12.12";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
-
-// Précache minimal (pas de CSS/JS pour permettre revalidation)
 const PRECACHE = [
   "index.html",
   "manifest.json",
@@ -35,22 +33,18 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Ne gère que même origine
   if (url.origin !== self.location.origin) return;
 
-  // Pages HTML (navigation): network-first
   if (req.mode === "navigate") {
     event.respondWith(networkFirst(req));
     return;
   }
 
-  // CSS: network-first
   if (req.destination === "style" || url.pathname.endsWith("style.css")) {
     event.respondWith(networkFirst(req));
     return;
   }
 
-  // JS applicatif: network-first
   if (
     req.destination === "script" &&
     (url.pathname.endsWith("script.js") ||
@@ -61,17 +55,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Images/icônes: cache-first
   if (req.destination === "image" || url.pathname.includes("/icons/")) {
     event.respondWith(cacheFirst(req));
     return;
   }
 
-  // Par défaut: network-first
   event.respondWith(networkFirst(req));
 });
 
-/* ---- stratégies ---- */
 async function cachePut(req, res) {
   try {
     const cache = await caches.open(CACHE_NAME);
