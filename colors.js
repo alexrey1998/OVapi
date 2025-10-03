@@ -195,7 +195,7 @@ export const lineColors = {
     "273": "#1E90FF"
   },
   
-  "PAG": {
+  PAG: {
     "100": "#00B5AD",
     "101": "#5C3317",
     "102": "#6B7C3A",
@@ -250,3 +250,4 @@ export const lineColors = {
   "BAT": "#007bff"
 
 };
+
