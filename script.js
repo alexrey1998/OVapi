@@ -18,6 +18,7 @@ const REFRESH_MS = parseHMStoMs(settings.refreshInterval, 60 * 1000);
 const STATIONBOARD_LIMIT = getInt(settings.stationboardLimit, 30);
 let swissStationsSet = new Set();
 let stationDeparturesCache = {};
+let trainPassListCache = {};
 fetch("swiss_stations.csv")
   .then(r => r.text())
   .then(txt => {
@@ -537,6 +538,25 @@ document.addEventListener("DOMContentLoaded", () => {
         if (other.name === currentName) {
           if (other.to && other.to !== dep.to && !isSwissStation(other.to)) {
             console.log(`Ajustement: Train ${currentName} de ${dep.to} → ${other.to}`);
+
+            try {
+              const connURL = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(dep.to)}&to=${encodeURIComponent(other.to)}&limit=1`;
+              const connData = await fetch(connURL).then(r => r.json());
+              const conn = (connData.connections || [])[0];
+
+              if (conn && Array.isArray(conn.sections)) {
+                for (const section of conn.sections) {
+                  if (section.journey && section.journey.name === currentName && Array.isArray(section.journey.passList)) {
+                    trainPassListCache[currentName] = section.journey.passList;
+                    console.log(`PassList mis en cache pour train ${currentName}: ${section.journey.passList.length} arrêts`);
+                    break;
+                  }
+                }
+              }
+            } catch (e) {
+              console.error(`Erreur récupération passList pour train ${currentName}`, e);
+            }
+
             return other.to;
           }
         }
@@ -908,7 +928,7 @@ document.addEventListener("DOMContentLoaded", () => {
               delayStr = d >= 5 ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
             }
             const pl = o.platform ? ` pl. ${escapeHtml(o.platform)}` : "";
-            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}">${o.timeStr}${delayStr} (${o.minutesLeft} min)${pl}</span>`;
+            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}" data-train="${escapeHtml(o.trainName || '')}">${o.timeStr}${delayStr} (${o.minutesLeft} min)${pl}</span>`;
           }).join("");
           card.appendChild(list);
         }
@@ -922,7 +942,8 @@ document.addEventListener("DOMContentLoaded", () => {
           }
           const dest = depEl.getAttribute("data-dest");
           const timeStr = depEl.getAttribute("data-time");
-          showThermometer(STOP_NAME, dest, timeStr, content);
+          const trainName = depEl.getAttribute("data-train");
+          showThermometer(STOP_NAME, dest, timeStr, content, trainName);
         });
       } else {
         card.classList.add("compact");
@@ -981,6 +1002,7 @@ document.addEventListener("DOMContentLoaded", () => {
           delay: (dep.stop && dep.stop.delay !== undefined && dep.stop.delay !== null) ? dep.stop.delay : null,
           lineKey: `${dep.category || ""} ${dep.number || ""}`,
           destination: dep.to || "",
+          trainName: dep.name || "",
           category: dep.category || "",
           number: dep.number || "",
           operator: dep.operator
@@ -991,7 +1013,7 @@ document.addEventListener("DOMContentLoaded", () => {
     allDepartures.sort((a, b) => a.effMs - b.effMs);
 
     allDepartures.forEach(depInfo => {
-      const { raw, timeStr, minutesLeft, platform, delay, destination, category, number, operator } = depInfo;
+      const { raw, timeStr, minutesLeft, platform, delay, destination, trainName, category, number, operator } = depInfo;
       
       let content = "";
       let lineColor = "";
@@ -1089,25 +1111,63 @@ document.addEventListener("DOMContentLoaded", () => {
       card.appendChild(infoDiv);
 
       card.addEventListener("click", () => {
-        showThermometer(STOP_NAME, destination, timeStr, content);
+        showThermometer(STOP_NAME, destination, timeStr, content, trainName);
       });
 
       departuresContainer.appendChild(card);
     });
   }
 
-  async function showThermometer(fromName, toName, hhmm, lineLabel) {
+  async function showThermometer(fromName, toName, hhmm, lineLabel, trainName) {
     if (!thermo) return;
     try {
-      const now = new Date();
-      const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-      const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
-      const data = await fetch(url).then(r => r.json());
-      const conn = (data.connections || [])[0];
       let passList = [];
-      if (conn && Array.isArray(conn.sections)) {
-        const vehicleSection = conn.sections.find(s => s.journey && Array.isArray(s.journey.passList));
-        if (vehicleSection) passList = vehicleSection.journey.passList;
+
+      if (trainName && trainPassListCache[trainName]) {
+        const cachedPassList = trainPassListCache[trainName];
+        const intermediateStation = cachedPassList[0]?.station?.name;
+
+        if (intermediateStation && intermediateStation !== fromName) {
+          const now = new Date();
+          const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
+          const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(intermediateStation)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
+          const data = await fetch(url).then(r => r.json());
+          const conn = (data.connections || [])[0];
+          let firstSegment = [];
+
+          if (conn && Array.isArray(conn.sections)) {
+            for (const section of conn.sections) {
+              if (section.journey && Array.isArray(section.journey.passList) && section.journey.passList.length > 0) {
+                if (firstSegment.length === 0) {
+                  firstSegment = [...section.journey.passList];
+                } else {
+                  const sectionStops = [...section.journey.passList];
+                  sectionStops.shift();
+                  firstSegment.push(...sectionStops);
+                }
+              }
+            }
+          }
+
+          if (firstSegment.length > 0) {
+            firstSegment.pop();
+          }
+          passList = [...firstSegment, ...cachedPassList];
+          console.log(`Thermomètre hybride: ${fromName} → ${intermediateStation} (API) + ${intermediateStation} → ${toName} (cache)`);
+        } else {
+          passList = cachedPassList;
+          console.log(`Thermomètre depuis cache pour train ${trainName}`);
+        }
+      } else {
+        const now = new Date();
+        const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
+        const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
+        const data = await fetch(url).then(r => r.json());
+        const conn = (data.connections || [])[0];
+        if (conn && Array.isArray(conn.sections)) {
+          const vehicleSection = conn.sections.find(s => s.journey && Array.isArray(s.journey.passList));
+          if (vehicleSection) passList = vehicleSection.journey.passList;
+        }
       }
 
       const header = thermo.querySelector("#thermo-title");

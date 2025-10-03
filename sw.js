@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_VERSION = "tplive-V_2025.10.01.12.12";
+const CACHE_VERSION = "tplive-V_2025.10.03.15.00";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 const PRECACHE = [
   "index.html",
