@@ -144,6 +144,11 @@ document.addEventListener("DOMContentLoaded", () => {
   let lastDepartures = [];
   let currentFetchController = null;
   let destinationsPending = false;
+  let suggestionsController = null;
+  function abortPendingSuggestions() {
+    if (suggestionsController && !suggestionsController.signal.aborted) suggestionsController.abort();
+    suggestionsController = null;
+  }
   let appSettings = loadAppSettings();
   let refreshTimerId = null;
   function startRefreshTimer() {
@@ -251,6 +256,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (q.length > 0) {
         fetchSuggestions(q);
       } else {
+        abortPendingSuggestions();
         if (userLocation) {
           fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, showNearbyStopsSuggestions);
         } else {
@@ -273,6 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (items.length > 0) {
           if (currentSuggestionIndex === -1) { currentSuggestionIndex = 0; updateSuggestionHighlight(); }
           const chosenName = items[currentSuggestionIndex].getAttribute("data-name");
+          abortPendingSuggestions();
           STOP_NAME = chosenName;
           stopNameEl.innerHTML = formatStopNameHTML(chosenName);
           selectedLines.clear();
@@ -292,6 +299,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     stopNameEl.addEventListener("blur", function() {
+      abortPendingSuggestions();
       blurTimer = setTimeout(() => {
         suggestionsContainer.innerHTML = "";
         suggestionsContainer.style.display = "none";
@@ -335,6 +343,7 @@ document.addEventListener("DOMContentLoaded", () => {
           clearTimeout(blurTimer);
           blurTimer = null;
         }
+        abortPendingSuggestions();
         const chosenName = el.getAttribute("data-name");
         STOP_NAME = chosenName;
         if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosenName);
@@ -385,10 +394,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function fetchSuggestions(query) {
+    if (suggestionsController && !suggestionsController.signal.aborted) suggestionsController.abort();
+    const controller = new AbortController();
+    suggestionsController = controller;
+    const signal = controller.signal;
+    const isStillRelevant = () => document.activeElement === stopNameEl && stopNameEl.textContent.trim() === query;
     const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}&type=station`;
-    fetch(url)
+    fetch(url, { signal })
       .then(r => r.json())
       .then(data => {
+        if (!isStillRelevant()) return;
         const stations = (data.stations || [])
           .filter(s => s.id)
           .slice(0, 8);
@@ -404,6 +419,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 clearTimeout(blurTimer);
                 blurTimer = null;
               }
+              abortPendingSuggestions();
               const chosenName = el.getAttribute("data-name");
               STOP_NAME = chosenName;
               stopNameEl.innerHTML = formatStopNameHTML(chosenName);
@@ -427,7 +443,10 @@ document.addEventListener("DOMContentLoaded", () => {
           currentSuggestionIndex = -1;
         }
       })
-      .catch(err => console.error("Erreur suggestions", err));
+      .catch(err => {
+        if (err.name === "AbortError") return;
+        console.error("Erreur suggestions", err);
+      });
   }
   function updateUserLocation(cb, opts = false) {
     if (!navigator.geolocation) { if (cb) cb(); return; }
