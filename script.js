@@ -16,6 +16,27 @@ function parseHMStoMs(hms, dfltMs) {
 const DISPLAY_WINDOW_MS = parseHMStoMs(settings.maxDisplayPeriod, 90 * 60 * 1000);
 const REFRESH_MS = parseHMStoMs(settings.refreshInterval, 60 * 1000);
 const STATIONBOARD_LIMIT = getInt(settings.stationboardLimit, 30);
+const REFRESH_CHOICES_MS = [10000, 30000, 60000];
+const APP_SETTINGS_KEY = "appSettings.v1";
+function loadAppSettings() {
+  const defaults = {
+    refreshMs: REFRESH_CHOICES_MS.includes(REFRESH_MS) ? REFRESH_MS : 60000,
+    showDelay: true,
+    delayShowThresholdMin: 2,
+    delayRedThresholdMin: 5
+  };
+  try {
+    const raw = localStorage.getItem(APP_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") return { ...defaults, ...parsed };
+    }
+  } catch {}
+  return defaults;
+}
+function saveAppSettings(s) {
+  try { localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(s)); } catch {}
+}
 let swissStationsSet = new Set();
 let stationDeparturesCache = {};
 let trainPassListCache = {};
@@ -97,6 +118,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const filterBox = document.getElementById("line-filter-box");
   const toggleFilterBtn = document.getElementById("toggle-filter");
   const toggleDisplayBtn = document.getElementById("btn-toggle-display");
+  const settingsBox = document.getElementById("settings-box");
+  const btnSettings = document.getElementById("btn-settings");
   const thermo = document.getElementById("thermo-container");
   if (thermo) {
     thermo.innerHTML = `
@@ -119,6 +142,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let expandedLineKey = null;
   let displayMode = loadDisplayMode(STOP_NAME);
   let lastDepartures = [];
+  let currentFetchController = null;
+  let destinationsPending = false;
+  let appSettings = loadAppSettings();
+  let refreshTimerId = null;
+  function startRefreshTimer() {
+    if (refreshTimerId) clearInterval(refreshTimerId);
+    refreshTimerId = setInterval(fetchDepartures, appSettings.refreshMs);
+  }
   function updateDisplayButtonIcon() {
     if (!toggleDisplayBtn) return;
     toggleDisplayBtn.textContent = displayMode === 'by-line' ? '☰' : '⊞';
@@ -515,19 +546,19 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
-  async function adjustTrainDestination(dep) {
+  async function adjustTrainDestination(dep, signal) {
     try {
       const stationKey = dep.to;
 
       if (!stationDeparturesCache[stationKey]) {
         const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
-        const locData = await fetch(locURL).then(r => r.json());
+        const locData = await fetch(locURL, { signal }).then(r => r.json());
         const station = locData.stations && locData.stations[0];
         if (!station) return dep.to;
 
         const stationId = station.id;
         const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}`;
-        const data = await fetch(url).then(r => r.json());
+        const data = await fetch(url, { signal }).then(r => r.json());
         stationDeparturesCache[stationKey] = data.stationboard || [];
       }
 
@@ -541,7 +572,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             try {
               const connURL = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(dep.to)}&to=${encodeURIComponent(other.to)}&limit=1`;
-              const connData = await fetch(connURL).then(r => r.json());
+              const connData = await fetch(connURL, { signal }).then(r => r.json());
               const conn = (connData.connections || [])[0];
 
               if (conn && Array.isArray(conn.sections)) {
@@ -554,7 +585,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
               }
             } catch (e) {
-              console.error(`Erreur récupération passList pour train ${currentName}`, e);
+              if (e.name !== "AbortError") console.error(`Erreur récupération passList pour train ${currentName}`, e);
             }
 
             return other.to;
@@ -562,7 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     } catch (e) {
-      console.error("Ajustement destination", dep.to, e);
+      if (e.name !== "AbortError") console.error("Ajustement destination", dep.to, e);
     }
     return dep.to;
   }
@@ -587,19 +618,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const key = STOP_NAME;
     if (!key || String(key).trim() === "") return;
     const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
+    if (currentFetchController && !currentFetchController.signal.aborted) currentFetchController.abort();
+    const controller = new AbortController();
+    currentFetchController = controller;
+    const signal = controller.signal;
     try {
-      const data = await fetch(API_URL).then(r => r.json());
+      const data = await fetch(API_URL, { signal }).then(r => r.json());
+      if (signal.aborted) return;
       let departures = (data && data.stationboard) ? data.stationboard : [];
-
-      await Promise.all(departures.map(async dep => {
-        if (!hasComma(STOP_NAME) &&
-            dep.to &&
-            !isSwissStation(dep.to) &&
-            lineColors.categories.trains.includes(dep.category)) {
-          const adjusted = await adjustTrainDestination(dep);
-          if (adjusted) dep.to = adjusted;
-        }
-      }));
       lastDepartures = departures;
 
       const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
@@ -614,6 +640,21 @@ document.addEventListener("DOMContentLoaded", () => {
         return numA.localeCompare(numB);
       });
       if (selectedLines.size === 0) lines.forEach(l => selectedLines.add(l));
+
+      destinationsPending = !hasComma(STOP_NAME);
+      renderInBackground(departures);
+
+      await Promise.all(departures.map(async dep => {
+        if (!hasComma(STOP_NAME) &&
+            dep.to &&
+            !isSwissStation(dep.to) &&
+            lineColors.categories.trains.includes(dep.category)) {
+          const adjusted = await adjustTrainDestination(dep, signal);
+          if (adjusted) dep.to = adjusted;
+        }
+      }));
+      if (signal.aborted) return;
+      destinationsPending = false;
 
       filterBox.innerHTML = `
         <div id="select-all-container" style="display:flex;gap:8px;margin-bottom:8px;">
@@ -660,20 +701,39 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
 
-      if (displayMode === 'by-line') {
-        renderDepartures(departures);
-      } else {
-        renderDeparturesByTime(departures);
-      }
-      
+      renderInBackground(departures);
+
       const now = new Date();
       if (lastUpdateElement) {
         lastUpdateElement.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       }
     } catch (e) {
+      if (e.name === "AbortError") return;
+      destinationsPending = false;
       console.error("Erreur chargement départs", e);
       departuresContainer.innerHTML = "<p>Erreur de chargement</p>";
+    } finally {
+      if (currentFetchController === controller) currentFetchController = null;
     }
+  }
+
+  function renderInBackground(departures) {
+    const keepThermo = thermo && thermo.style.display === "block" && thermo.dataset.stop === STOP_NAME;
+    if (displayMode === 'by-line') {
+      renderDepartures(departures);
+    } else {
+      renderDeparturesByTime(departures);
+    }
+    if (keepThermo) {
+      departuresContainer.style.display = "none";
+      thermo.style.display = "block";
+    }
+  }
+
+  function applyPendingStyle(el) {
+    if (!destinationsPending) return;
+    el.classList.add("destination-pending");
+    el.insertAdjacentHTML("beforeend", ' <span class="pending-hourglass" aria-hidden="true">⏳</span>');
   }
 
   function closeFilterModal() {
@@ -713,6 +773,116 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && document.body.classList.contains("filters-open")) closeFilterModal();
+  });
+
+  function closeSettingsModal() {
+    document.body.classList.remove("settings-open");
+    settingsBox.classList.remove("modal-open");
+    if (!settingsBox.classList.contains("hidden")) settingsBox.classList.add("hidden");
+  }
+  function ensureSettingsClose() {
+    let btn = document.getElementById("settings-close");
+    if (!btn || btn.parentElement !== settingsBox) {
+      if (btn && btn.parentElement) btn.parentElement.removeChild(btn);
+      btn = document.createElement("button");
+      btn.id = "settings-close";
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Fermer");
+      btn.textContent = "×";
+      btn.addEventListener("click", closeSettingsModal);
+      settingsBox.prepend(btn);
+    }
+  }
+  function openSettingsModal() {
+    ensureSettingsClose();
+    settingsBox.classList.remove("hidden");
+    settingsBox.classList.add("modal-open");
+    document.body.classList.add("settings-open");
+  }
+  function renderSettingsBox() {
+    if (!settingsBox) return;
+    settingsBox.innerHTML = `
+      <div class="settings-section">
+        <h3>Rafraîchissement automatique</h3>
+        <label class="filter-item"><input type="radio" name="refresh-interval" value="10000"> 10 secondes</label>
+        <label class="filter-item"><input type="radio" name="refresh-interval" value="30000"> 30 secondes</label>
+        <label class="filter-item"><input type="radio" name="refresh-interval" value="60000"> 1 minute</label>
+      </div>
+      <div class="settings-section">
+        <h3>Avances / retards</h3>
+        <label class="filter-item"><input type="checkbox" id="setting-show-delay"> Afficher les avances/retards</label>
+        <label class="settings-field">
+          Afficher à partir de <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-show-threshold" class="inline-value-input" aria-label="Seuil d'affichage en minutes"> min
+        </label>
+        <label class="settings-field">
+          Afficher en rouge à partir de <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-red-threshold" class="inline-value-input" aria-label="Seuil du rouge en minutes"> min
+        </label>
+      </div>
+    `;
+    ensureSettingsClose();
+
+    settingsBox.querySelectorAll('input[name="refresh-interval"]').forEach(r => {
+      r.checked = Number(r.value) === appSettings.refreshMs;
+      r.addEventListener("change", () => {
+        appSettings.refreshMs = Number(r.value);
+        saveAppSettings(appSettings);
+        startRefreshTimer();
+      });
+    });
+
+    const showDelayCb = settingsBox.querySelector("#setting-show-delay");
+    showDelayCb.checked = appSettings.showDelay;
+    showDelayCb.addEventListener("change", () => {
+      appSettings.showDelay = showDelayCb.checked;
+      saveAppSettings(appSettings);
+      renderInBackground(lastDepartures);
+    });
+
+    function setupInlineValueInput(input, onCommit) {
+      input.addEventListener("focus", () => input.select());
+      input.addEventListener("input", () => {
+        input.value = input.value.replace(/[^0-9]/g, "");
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") input.blur();
+      });
+      input.addEventListener("change", () => {
+        const v = Math.max(0, Math.round(Number(input.value)) || 0);
+        input.value = v;
+        onCommit(v);
+      });
+    }
+
+    const showThresholdInput = settingsBox.querySelector("#setting-delay-show-threshold");
+    showThresholdInput.value = appSettings.delayShowThresholdMin;
+    setupInlineValueInput(showThresholdInput, (v) => {
+      appSettings.delayShowThresholdMin = v;
+      saveAppSettings(appSettings);
+      renderInBackground(lastDepartures);
+    });
+
+    const redThresholdInput = settingsBox.querySelector("#setting-delay-red-threshold");
+    redThresholdInput.value = appSettings.delayRedThresholdMin;
+    setupInlineValueInput(redThresholdInput, (v) => {
+      appSettings.delayRedThresholdMin = v;
+      saveAppSettings(appSettings);
+      renderInBackground(lastDepartures);
+    });
+  }
+  renderSettingsBox();
+  btnSettings?.addEventListener("click", () => {
+    if (document.body.classList.contains("settings-open")) closeSettingsModal();
+    else openSettingsModal();
+  });
+  document.addEventListener("click", (e) => {
+    if (document.body.classList.contains("settings-open")) {
+      const inModal = settingsBox.contains(e.target);
+      const onToggle = btnSettings?.contains(e.target);
+      if (!inModal && !onToggle) closeSettingsModal();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.body.classList.contains("settings-open")) closeSettingsModal();
   });
 
   function isMobileDevice() {
@@ -916,16 +1086,17 @@ document.addEventListener("DOMContentLoaded", () => {
           const destDiv = document.createElement("div");
           destDiv.className = "destination-title";
           destDiv.innerHTML = formatStopNameHTML(displayDest) + escapeHtml(suffixAirport);
+          applyPendingStyle(destDiv);
           card.appendChild(destDiv);
 
           const list = document.createElement("div");
           list.className = "departure-times";
           list.innerHTML = times.slice(0, 5).map(o => {
             let delayStr = "";
-            if (o.delay !== null && (o.delay <= -2 || o.delay >= 2)) {
+            if (appSettings.showDelay && o.delay !== null && Math.abs(o.delay) >= appSettings.delayShowThresholdMin) {
               const d = Math.abs(o.delay);
               const sign = o.delay >= 0 ? "+" : "-";
-              delayStr = d >= 5 ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
+              delayStr = d >= appSettings.delayRedThresholdMin ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
             }
             const pl = o.platform ? ` pl. ${escapeHtml(o.platform)}` : "";
             return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}" data-train="${escapeHtml(o.trainName || '')}">${o.timeStr}${delayStr} (${o.minutesLeft} min)${pl}</span>`;
@@ -955,6 +1126,7 @@ document.addEventListener("DOMContentLoaded", () => {
           destDiv.className = "destination-title";
           const suffixAirport = (dest === "Zürich Flughafen" || dest === "Genève-Aéroport") ? " ✈" : "";
           destDiv.innerHTML = formatStopNameHTML(dest) + escapeHtml(suffixAirport);
+          applyPendingStyle(destDiv);
           card.appendChild(destDiv);
 
           const strip = document.createElement("div");
@@ -1082,10 +1254,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const timeSpan = document.createElement("span");
       timeSpan.className = "departure-time";
       let delayStr = "";
-      if (delay !== null && (delay <= -2 || delay >= 2)) {
+      if (appSettings.showDelay && delay !== null && Math.abs(delay) >= appSettings.delayShowThresholdMin) {
         const d = Math.abs(delay);
         const sign = delay >= 0 ? "+" : "-";
-        delayStr = d >= 5 ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
+        delayStr = d >= appSettings.delayRedThresholdMin ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
       }
       timeSpan.innerHTML = `${timeStr}${delayStr}`;
       infoDiv.appendChild(timeSpan);
@@ -1099,6 +1271,7 @@ document.addEventListener("DOMContentLoaded", () => {
       destSpan.className = "departure-destination";
       const suffixAirport = (destination === "Zürich Flughafen" || destination === "Genève-Aéroport") ? " ✈" : "";
       destSpan.innerHTML = formatStopNameHTML(destination) + escapeHtml(suffixAirport);
+      applyPendingStyle(destSpan);
       infoDiv.appendChild(destSpan);
 
       if (platform) {
@@ -1215,6 +1388,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       departuresContainer.style.display = "none";
       thermo.style.display = "block";
+      thermo.dataset.stop = fromName;
     } catch (e) {
       console.error("Thermomètre erreur", e);
     }
@@ -1238,6 +1412,6 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       fetchDepartures();
     }
-    setInterval(fetchDepartures, REFRESH_MS);
+    startRefreshTimer();
   })();
 });
