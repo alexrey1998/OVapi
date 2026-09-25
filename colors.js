@@ -1,4 +1,5 @@
 // colors.js
+// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
 export const lineColors = {
   TPG: {
     "1": "#5A1E82",

@@ -1,4 +1,5 @@
 /* style.css */
+/* Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js). */
 * {
   margin: 0;
   padding: 0;
@@ -91,7 +92,8 @@ h1 {
   background-color: #0056b3;
 }
 
-#line-filter-box {
+#line-filter-box,
+#settings-box {
   background: white;
   border: 1px solid #ddd;
   border-radius: 7px;
@@ -105,26 +107,6 @@ h1 {
   gap: 5px;
   margin-bottom: 5px;
 }
-
-#quick-actions {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-}
-#quick-actions button,
-.qa-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #fff;
-  cursor: pointer;
-}
-#quick-actions button:hover,
-.qa-btn:hover { background: #f5f7fb; }
 
 #departures {
   display: grid;
@@ -144,7 +126,6 @@ h1 {
   border-radius: 10px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.08);
   min-width: 250px;
-  position: static;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -203,7 +184,8 @@ h1 {
   white-space: nowrap;
 }
 
-.departure-card .late {
+.departure-card .late,
+.departure-item .late {
   color: #eb0000;
 }
 
@@ -264,7 +246,6 @@ h1 {
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
-.departure-item .late { color: #eb0000; }
 
 .line-card.compact .departure-times { display: none; }
 
@@ -277,12 +258,12 @@ body.fullscreen {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  -ms-overflow-style: none;
   scrollbar-width: none;
 }
 body.fullscreen::-webkit-scrollbar { display: none; }
 
-body.filters-open::before {
+body.filters-open::before,
+body.settings-open::before {
   content: "";
   position: fixed;
   inset: 0;
@@ -291,7 +272,8 @@ body.filters-open::before {
   -webkit-backdrop-filter: blur(4px);
   z-index: 1000;
 }
-#line-filter-box.modal-open {
+#line-filter-box.modal-open,
+#settings-box.modal-open {
   position: fixed;
   inset: 6vh 6vw;
   max-height: 88vh;
@@ -302,7 +284,8 @@ body.filters-open::before {
   padding: 16px;
   z-index: 1001;
 }
-#filter-close {
+#filter-close,
+#settings-close {
   position: sticky;
   top: 0;
   margin-left: auto;
@@ -319,7 +302,8 @@ body.filters-open::before {
   color: #888;
   z-index: 1;
 }
-#filter-close:hover { color: #555; }
+#filter-close:hover,
+#settings-close:hover { color: #555; }
 
 #thermo-container {
   display: none;
@@ -365,51 +349,6 @@ body.filters-open::before {
   font-style: normal;
 }
 
-#settings-box {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 7px;
-  padding: 10px;
-  margin-top: 5px;
-}
-#settings-box.modal-open {
-  position: fixed;
-  inset: 6vh 6vw;
-  max-height: 88vh;
-  overflow: auto;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.2);
-  padding: 16px;
-  z-index: 1001;
-}
-#settings-close {
-  position: sticky;
-  top: 0;
-  margin-left: auto;
-  margin-bottom: 8px;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 999px;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: #888;
-  z-index: 1;
-}
-#settings-close:hover { color: #555; }
-body.settings-open::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.25);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  z-index: 1000;
-}
 .settings-section {
   margin-bottom: 16px;
 }

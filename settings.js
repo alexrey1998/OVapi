@@ -1,4 +1,5 @@
 // settings.js
+// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
 export const settings = {
   // Nombre max de départs récupérés depuis l'API
   stationboardLimit: 150,

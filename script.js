@@ -1,4 +1,5 @@
 // script.js
+// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 function getInt(val, dflt) {
@@ -79,22 +80,96 @@ function computeDistance(lat1, lon1, lat2, lon2) {
     Math.sin(dLon/2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-const __badgeCanvas = document.createElement("canvas");
-const __badgeCtx = __badgeCanvas.getContext("2d");
+// ≈ police de .line-badge (style.css), en dur car le badge est mesuré avant d'être dans la page.
+const badgeCtx = document.createElement("canvas").getContext("2d");
+badgeCtx.font = "700 22px Arial";
 function adjustLineBadgePadding(el) {
-  try {
-    const text = (el.textContent || "").trim();
-    if (!text) return;
-    const cs = window.getComputedStyle(el);
-    const font = `${cs.fontStyle || "normal"} ${cs.fontVariant || "normal"} ${cs.fontWeight || "700"} ${cs.fontSize || "22px"} ${cs.fontFamily || "Arial"}`;
-    __badgeCtx.font = font;
-    const w = __badgeCtx.measureText(text).width;
-    const base = 10;
-    const extra = Math.max(0, Math.min(24, Math.round(w * 0.15)));
-    const pad = base + extra;
-    el.style.paddingLeft = pad + "px";
-    el.style.paddingRight = pad + "px";
-  } catch { }
+  const text = (el.textContent || "").trim();
+  if (!text) return;
+  const w = badgeCtx.measureText(text).width;
+  const base = 10;
+  const extra = Math.max(0, Math.min(24, Math.round(w * 0.15)));
+  const pad = base + extra;
+  el.style.paddingLeft = pad + "px";
+  el.style.paddingRight = pad + "px";
+}
+function createLineBadge({ label, color }) {
+  const badge = document.createElement("span");
+  badge.className = "line-badge";
+  badge.style.backgroundColor = color;
+  badge.textContent = label;
+  adjustLineBadgePadding(badge);
+  return badge;
+}
+// Libellé et couleur du badge d'une ligne.
+function getLineBadge(category, number, operator) {
+  const { categories } = lineColors;
+  const withNumber = (prefix) => (number && !number.startsWith("0") ? `${prefix} ${number}` : prefix);
+  if (category === "B" || category === "T" || category === "M") {
+    return { label: number || category, color: operatorColor(operator, number) || categories.default };
+  }
+  if (category === "FUN") {
+    return { label: withNumber("Funi"), color: operatorColor(operator, number) || categories.default };
+  }
+  if (category === "BAT") {
+    // lineColors.BAT n'est pas encore lu : pour colorer les bateaux, c'est ici qu'il faudra le lire.
+    return { label: withNumber("BAT"), color: categories.default };
+  }
+  if (category === "GB") return { label: "🚠", color: categories.GB };
+  const label = withNumber(category);
+  if (categories.trains.includes(category)) return { label, color: categories.trainsColor };
+  // lineColors[label] : point d'extension pour des couleurs par libellé.
+  return { label, color: lineColors[label] || categories.trainsColor };
+}
+// Couleur dans la palette de l'opérateur : numéro exact, sinon partie numérique, sinon "default".
+function operatorColor(operator, number) {
+  const palette = operator && lineColors[operator];
+  if (!palette) return "";
+  return palette[number] || palette[number.match(/^\d+/)?.[0]] || palette.default;
+}
+function lineKeyOf(dep) {
+  return `${dep.category || ""} ${dep.number || ""}`;
+}
+// Tri des lignes : numéros qui commencent par des chiffres d'abord (par valeur), puis ordre alphabétique.
+function compareLineKeys(a, b) {
+  const numA = a.split(" ").pop();
+  const numB = b.split(" ").pop();
+  const pureNumA = parseInt(numA.match(/^\d+/)?.[0]);
+  const pureNumB = parseInt(numB.match(/^\d+/)?.[0]);
+  const isNumA = !isNaN(pureNumA);
+  const isNumB = !isNaN(pureNumB);
+  if (isNumA && isNumB) return pureNumA !== pureNumB ? pureNumA - pureNumB : numA.localeCompare(numB);
+  if (isNumA) return -1;
+  if (isNumB) return 1;
+  return numA.localeCompare(numB);
+}
+function withDelay(ms, delayMin) {
+  return ms + (Number.isFinite(delayMin) ? delayMin * 60000 : 0);
+}
+function minutesUntil(ms, nowMs) {
+  return Math.max(0, Math.round((ms - nowMs) / 60000));
+}
+// Départ du tableau prêt à afficher, ou null s'il sort de la période d'affichage.
+function toDepartureInfo(dep, nowMs) {
+  const schedMs = new Date(dep.stop?.departure).getTime();
+  const effMs = Number.isFinite(schedMs) ? withDelay(schedMs, Number(dep.stop?.delay || 0)) : NaN;
+  if (!Number.isFinite(effMs) || effMs - nowMs > DISPLAY_WINDOW_MS) return null;
+  return {
+    dep,
+    effMs,
+    minutesLeft: minutesUntil(effMs, nowMs),
+    timeStr: fmtHM(new Date(schedMs)),
+    platform: (dep.stop?.platform && dep.category !== "GB" && dep.stop.platform !== "null") ? dep.stop.platform : "",
+    delay: dep.stop?.delay ?? null
+  };
+}
+// Première correspondance entre deux arrêts, aujourd'hui à partir de hhmm.
+async function fetchFirstConnection(from, to, hhmm) {
+  const now = new Date();
+  const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
+  const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
+  const data = await fetch(url).then(r => r.json());
+  return (data.connections || [])[0];
 }
 function hasComma(stopName) {
   return String(stopName).includes(',');
@@ -109,6 +184,45 @@ function loadDisplayMode(stopName) {
 function saveDisplayMode(stopName, mode) {
   const key = hasComma(stopName) ? 'displayMode-withComma' : 'displayMode-noComma';
   localStorage.setItem(key, mode);
+}
+// Fenêtre Filtres ou Réglages : ouverture, fermeture, bouton ×, clic à l'extérieur et Échap.
+function setupModal({ box, toggleBtn, closeId, bodyClass }) {
+  const isOpen = () => document.body.classList.contains(bodyClass);
+  function close() {
+    document.body.classList.remove(bodyClass);
+    box.classList.remove("modal-open");
+    box.classList.add("hidden");
+  }
+  function ensureClose() {
+    let btn = document.getElementById(closeId);
+    if (!btn || btn.parentElement !== box) {
+      if (btn && btn.parentElement) btn.parentElement.removeChild(btn);
+      btn = document.createElement("button");
+      btn.id = closeId;
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Fermer");
+      btn.textContent = "×";
+      btn.addEventListener("click", close);
+      box.prepend(btn);
+    }
+  }
+  function open() {
+    ensureClose();
+    box.classList.remove("hidden");
+    box.classList.add("modal-open");
+    document.body.classList.add(bodyClass);
+  }
+  toggleBtn?.addEventListener("click", () => {
+    if (isOpen()) close();
+    else open();
+  });
+  document.addEventListener("click", (e) => {
+    if (isOpen() && !box.contains(e.target) && !toggleBtn?.contains(e.target)) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isOpen()) close();
+  });
+  return { ensureClose };
 }
 document.addEventListener("DOMContentLoaded", () => {
   const stopNameEl = document.getElementById("stop-name");
@@ -181,24 +295,32 @@ document.addEventListener("DOMContentLoaded", () => {
       return { lat: o.lat, lon: o.lon, accuracy: o.accuracy ?? null };
     } catch { return null; }
   }
-  let nearbyRaw = [];
   let nearbyStops = [];
+  // Affiche l'arrêt choisi et charge ses départs.
+  function selectStop(name) {
+    STOP_NAME = name;
+    if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(name);
+    selectedLines.clear();
+    expandedLineKey = null;
+    autoFillAllowed = false;
+    displayMode = loadDisplayMode(name);
+    updateDisplayButtonIcon();
+    fetchDepartures();
+  }
+  // Choix dans la liste de suggestions (clic ou Entrée) : ferme aussi la liste et sort du titre.
+  function chooseSuggestion(name) {
+    abortPendingSuggestions();
+    hideSuggestions();
+    selectStop(name);
+    if (stopNameEl) stopNameEl.blur();
+  }
   document.getElementById("btn-refresh")?.addEventListener("click", () => fetchDepartures());
 
   document.getElementById("btn-gps")?.addEventListener("click", () => {
     updateUserLocation(() => {
       if (!userLocation) return;
       fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
-        if (nearbyStops.length > 0) {
-          STOP_NAME = nearbyStops[0].name;
-          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-          selectedLines.clear();
-          expandedLineKey = null;
-          displayMode = loadDisplayMode(STOP_NAME);
-          updateDisplayButtonIcon();
-          try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-          fetchDepartures();
-        }
+        if (nearbyStops.length > 0) selectStop(nearbyStops[0].name);
       });
     }, true);
   });
@@ -209,14 +331,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const first = nearbyStops[0]?.name;
       const second = nearbyStops[1]?.name;
       if (!first || !second) return;
-      STOP_NAME = (STOP_NAME === first) ? second : first;
-      if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-      selectedLines.clear();
-      expandedLineKey = null;
-      displayMode = loadDisplayMode(STOP_NAME);
-      updateDisplayButtonIcon();
-      try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-      fetchDepartures();
+      selectStop(STOP_NAME === first ? second : first);
     };
     if (nearbyStops.length >= 2) {
       applyToggle();
@@ -229,11 +344,7 @@ document.addEventListener("DOMContentLoaded", () => {
     saveDisplayMode(STOP_NAME, displayMode);
     updateDisplayButtonIcon();
     expandedLineKey = null;
-    if (displayMode === 'by-line') {
-      renderDepartures(lastDepartures);
-    } else {
-      renderDeparturesByTime(lastDepartures);
-    }
+    renderCurrentMode(lastDepartures);
   });
   if (stopNameEl) {
     stopNameEl.addEventListener("click", function() {
@@ -260,8 +371,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (userLocation) {
           fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, showNearbyStopsSuggestions);
         } else {
-          suggestionsContainer.innerHTML = "";
-          suggestionsContainer.style.display = "none";
+          hideSuggestions();
         }
       }
     });
@@ -278,20 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         if (items.length > 0) {
           if (currentSuggestionIndex === -1) { currentSuggestionIndex = 0; updateSuggestionHighlight(); }
-          const chosenName = items[currentSuggestionIndex].getAttribute("data-name");
-          abortPendingSuggestions();
-          STOP_NAME = chosenName;
-          stopNameEl.innerHTML = formatStopNameHTML(chosenName);
-          selectedLines.clear();
-          suggestionsContainer.innerHTML = "";
-          suggestionsContainer.style.display = "none";
-          currentSuggestionIndex = -1;
-          autoFillAllowed = false;
-          displayMode = loadDisplayMode(STOP_NAME);
-          updateDisplayButtonIcon();
-          try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-          fetchDepartures();
-          stopNameEl.blur();
+          chooseSuggestion(items[currentSuggestionIndex].getAttribute("data-name"));
         } else {
           stopNameEl.blur();
         }
@@ -300,22 +397,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     stopNameEl.addEventListener("blur", function() {
       abortPendingSuggestions();
-      blurTimer = setTimeout(() => {
-        suggestionsContainer.innerHTML = "";
-        suggestionsContainer.style.display = "none";
-        currentSuggestionIndex = -1;
-      }, 200);
+      blurTimer = setTimeout(hideSuggestions, 200);
       const val = this.textContent.trim();
-      if (val) {
-        STOP_NAME = val;
-        stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-        selectedLines.clear();
-        autoFillAllowed = false;
-        displayMode = loadDisplayMode(STOP_NAME);
-        updateDisplayButtonIcon();
-        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-        fetchDepartures();
-      }
+      if (val) selectStop(val);
     });
   }
 
@@ -323,44 +407,38 @@ document.addEventListener("DOMContentLoaded", () => {
     const items = suggestionsContainer.querySelectorAll("div[data-name]");
     items.forEach((el, idx) => el.classList.toggle("selected", idx === currentSuggestionIndex));
   }
-  function showNearbyStopsSuggestions() {
-    if (document.activeElement !== stopNameEl || stopNameEl.textContent.trim() !== "") return;
-    if (!nearbyStops.length) {
-      suggestionsContainer.innerHTML = "";
-      suggestionsContainer.style.display = "none";
+  function hideSuggestions() {
+    suggestionsContainer.innerHTML = "";
+    suggestionsContainer.style.display = "none";
+    currentSuggestionIndex = -1;
+  }
+  function showSuggestions(names) {
+    if (!names.length) {
+      hideSuggestions();
       return;
     }
-    suggestionsContainer.innerHTML = nearbyStops.slice(0, 5).map(s =>
-      `<div data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`
+    suggestionsContainer.innerHTML = names.map(name =>
+      `<div data-name="${escapeHtml(name)}">${escapeHtml(name)}</div>`
     ).join("");
     suggestionsContainer.style.display = "block";
     currentSuggestionIndex = -1;
-    suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-      const handleSelection = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (blurTimer) {
-          clearTimeout(blurTimer);
-          blurTimer = null;
-        }
-        abortPendingSuggestions();
-        const chosenName = el.getAttribute("data-name");
-        STOP_NAME = chosenName;
-        if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(chosenName);
-        selectedLines.clear();
-        suggestionsContainer.innerHTML = "";
-        suggestionsContainer.style.display = "none";
-        currentSuggestionIndex = -1;
-        autoFillAllowed = false;
-        displayMode = loadDisplayMode(STOP_NAME);
-        updateDisplayButtonIcon();
-        try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-        fetchDepartures();
-        if (stopNameEl) stopNameEl.blur();
-      };
-      el.addEventListener("mousedown", handleSelection);
-      el.addEventListener("touchstart", handleSelection);
-    });
+  }
+  function handleSuggestionPick(e) {
+    const el = e.target.closest("div[data-name]");
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (blurTimer) {
+      clearTimeout(blurTimer);
+      blurTimer = null;
+    }
+    chooseSuggestion(el.getAttribute("data-name"));
+  }
+  suggestionsContainer.addEventListener("mousedown", handleSuggestionPick);
+  suggestionsContainer.addEventListener("touchstart", handleSuggestionPick);
+  function showNearbyStopsSuggestions() {
+    if (document.activeElement !== stopNameEl || stopNameEl.textContent.trim() !== "") return;
+    showSuggestions(nearbyStops.slice(0, 5).map(s => s.name));
   }
   function hasValidCoord(s) {
     return s && s.coordinate && Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
@@ -381,20 +459,18 @@ document.addEventListener("DOMContentLoaded", () => {
           })
           .sort((a, b) => a.d - b.d);
 
-        nearbyRaw = enriched;
         nearbyStops = enriched.filter(e => e.id && (!e.type || e.type === "station"));
         if (typeof callback === "function") callback();
       })
       .catch(err => {
         console.error("Erreur suggestions géoloc", err);
-        nearbyRaw = [];
         nearbyStops = [];
         if (typeof callback === "function") callback();
       });
   }
 
   function fetchSuggestions(query) {
-    if (suggestionsController && !suggestionsController.signal.aborted) suggestionsController.abort();
+    abortPendingSuggestions();
     const controller = new AbortController();
     suggestionsController = controller;
     const signal = controller.signal;
@@ -407,41 +483,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const stations = (data.stations || [])
           .filter(s => s.id)
           .slice(0, 8);
-        if (stations.length > 0) {
-          suggestionsContainer.innerHTML = stations.map(s => `<div data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`).join("");
-          suggestionsContainer.style.display = "block";
-          currentSuggestionIndex = -1;
-          suggestionsContainer.querySelectorAll("div[data-name]").forEach((el) => {
-            const handleSelection = function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              if (blurTimer) {
-                clearTimeout(blurTimer);
-                blurTimer = null;
-              }
-              abortPendingSuggestions();
-              const chosenName = el.getAttribute("data-name");
-              STOP_NAME = chosenName;
-              stopNameEl.innerHTML = formatStopNameHTML(chosenName);
-              selectedLines.clear();
-              suggestionsContainer.innerHTML = "";
-              suggestionsContainer.style.display = "none";
-              currentSuggestionIndex = -1;
-              autoFillAllowed = false;
-              displayMode = loadDisplayMode(STOP_NAME);
-              updateDisplayButtonIcon();
-              try { localStorage.setItem("lastUserStop", STOP_NAME); } catch {}
-              fetchDepartures();
-              stopNameEl.blur();
-            };
-            el.addEventListener("mousedown", handleSelection);
-            el.addEventListener("touchstart", handleSelection);
-          });
-        } else {
-          suggestionsContainer.innerHTML = "";
-          suggestionsContainer.style.display = "none";
-          currentSuggestionIndex = -1;
-        }
+        showSuggestions(stations.map(s => s.name));
       })
       .catch(err => {
         if (err.name === "AbortError") return;
@@ -554,13 +596,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (ok) { chosen = candidate; break; }
         }
         if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
-        if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") {
-          STOP_NAME = chosen;
-          if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
-          displayMode = loadDisplayMode(STOP_NAME);
-          updateDisplayButtonIcon();
-          fetchDepartures();
-        }
+        if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") selectStop(chosen);
         resolve(chosen);
       });
     });
@@ -587,8 +623,6 @@ document.addEventListener("DOMContentLoaded", () => {
       for (const other of departures) {
         if (other.name === currentName) {
           if (other.to && other.to !== dep.to && !isSwissStation(other.to)) {
-            console.log(`Ajustement: Train ${currentName} de ${dep.to} → ${other.to}`);
-
             try {
               const connURL = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(dep.to)}&to=${encodeURIComponent(other.to)}&limit=1`;
               const connData = await fetch(connURL, { signal }).then(r => r.json());
@@ -598,7 +632,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 for (const section of conn.sections) {
                   if (section.journey && section.journey.name === currentName && Array.isArray(section.journey.passList)) {
                     trainPassListCache[currentName] = section.journey.passList;
-                    console.log(`PassList mis en cache pour train ${currentName}: ${section.journey.passList.length} arrêts`);
                     break;
                   }
                 }
@@ -623,12 +656,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await fetch(API_URL).then(r => r.json());
       const departures = data.stationboard || [];
       const now = Date.now();
-      return departures.some(dep => {
-        const sched = new Date(dep.stop?.departure).getTime();
-        const delay = Number(dep.stop?.delay || 0);
-        const eff = Number.isFinite(sched) ? sched + (Number.isFinite(delay) ? delay * 60000 : 0) : NaN;
-        return Number.isFinite(eff) && (eff - now) <= DISPLAY_WINDOW_MS;
-      });
+      return departures.some(dep => toDepartureInfo(dep, now) !== null);
     } catch {
       return false;
     }
@@ -647,17 +675,8 @@ document.addEventListener("DOMContentLoaded", () => {
       let departures = (data && data.stationboard) ? data.stationboard : [];
       lastDepartures = departures;
 
-      const lines = [...new Set(departures.map(dep => `${dep.category || ""} ${dep.number || ""}`))];
-      lines.sort((a, b) => {
-        const numA = a.split(" ").pop();
-        const numB = b.split(" ").pop();
-        const isNumA = !isNaN(numA);
-        const isNumB = !isNaN(numB);
-        if (isNumA && isNumB) return parseInt(numA) - parseInt(numB);
-        if (isNumA) return -1;
-        if (isNumB) return 1;
-        return numA.localeCompare(numB);
-      });
+      const lines = [...new Set(departures.map(lineKeyOf))];
+      lines.sort(compareLineKeys);
       if (selectedLines.size === 0) lines.forEach(l => selectedLines.add(l));
 
       destinationsPending = !hasComma(STOP_NAME);
@@ -689,35 +708,23 @@ document.addEventListener("DOMContentLoaded", () => {
           }).join("")}
         </div>
       `;
-      ensureFilterClose();
+      filterModal.ensureClose();
       filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
         cb.addEventListener("change", () => {
           if (cb.checked) selectedLines.add(cb.value);
           else selectedLines.delete(cb.value);
-          if (displayMode === 'by-line') {
-            renderDepartures(departures);
-          } else {
-            renderDeparturesByTime(departures);
-          }
+          renderCurrentMode(departures);
         });
       });
       filterBox.querySelector("#select-all")?.addEventListener("click", () => {
         lines.forEach(l => selectedLines.add(l));
         filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
-        if (displayMode === 'by-line') {
-          renderDepartures(departures);
-        } else {
-          renderDeparturesByTime(departures);
-        }
+        renderCurrentMode(departures);
       });
       filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
         selectedLines.clear();
         filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
-        if (displayMode === 'by-line') {
-          renderDepartures(departures);
-        } else {
-          renderDeparturesByTime(departures);
-        }
+        renderCurrentMode(departures);
       });
 
       renderInBackground(departures);
@@ -736,13 +743,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function renderInBackground(departures) {
-    const keepThermo = thermo && thermo.style.display === "block" && thermo.dataset.stop === STOP_NAME;
+  function renderCurrentMode(departures) {
     if (displayMode === 'by-line') {
       renderDepartures(departures);
     } else {
       renderDeparturesByTime(departures);
     }
+  }
+
+  // Garde le thermomètre ouvert s'il concerne l'arrêt affiché (les autres rendus le ferment).
+  function renderInBackground(departures) {
+    const keepThermo = thermo && thermo.style.display === "block" && thermo.dataset.stop === STOP_NAME;
+    renderCurrentMode(departures);
     if (keepThermo) {
       departuresContainer.style.display = "none";
       thermo.style.display = "block";
@@ -755,69 +767,23 @@ document.addEventListener("DOMContentLoaded", () => {
     el.insertAdjacentHTML("beforeend", ' <span class="pending-hourglass" aria-hidden="true">⏳</span>');
   }
 
-  function closeFilterModal() {
-    document.body.classList.remove("filters-open");
-    filterBox.classList.remove("modal-open");
-    if (!filterBox.classList.contains("hidden")) filterBox.classList.add("hidden");
+  const AIRPORTS = ["Zürich Flughafen", "Genève-Aéroport"];
+  function fillDestination(el, dest) {
+    el.innerHTML = formatStopNameHTML(dest) + (AIRPORTS.includes(dest) ? " ✈" : "");
+    applyPendingStyle(el);
   }
-  function ensureFilterClose() {
-    let btn = document.getElementById("filter-close");
-    if (!btn || btn.parentElement !== filterBox) {
-      if (btn && btn.parentElement) btn.parentElement.removeChild(btn);
-      btn = document.createElement("button");
-      btn.id = "filter-close";
-      btn.type = "button";
-      btn.setAttribute("aria-label", "Fermer");
-      btn.textContent = "×";
-      btn.addEventListener("click", closeFilterModal);
-      filterBox.prepend(btn);
-    }
-  }
-  function openFilterModal() {
-    ensureFilterClose();
-    filterBox.classList.remove("hidden");
-    filterBox.classList.add("modal-open");
-    document.body.classList.add("filters-open");
-  }
-  toggleFilterBtn?.addEventListener("click", () => {
-    if (document.body.classList.contains("filters-open")) closeFilterModal();
-    else openFilterModal();
-  });
-  document.addEventListener("click", (e) => {
-    if (document.body.classList.contains("filters-open")) {
-      const inModal = filterBox.contains(e.target);
-      const onToggle = toggleFilterBtn?.contains(e.target);
-      if (!inModal && !onToggle) closeFilterModal();
-    }
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && document.body.classList.contains("filters-open")) closeFilterModal();
-  });
 
-  function closeSettingsModal() {
-    document.body.classList.remove("settings-open");
-    settingsBox.classList.remove("modal-open");
-    if (!settingsBox.classList.contains("hidden")) settingsBox.classList.add("hidden");
-  }
-  function ensureSettingsClose() {
-    let btn = document.getElementById("settings-close");
-    if (!btn || btn.parentElement !== settingsBox) {
-      if (btn && btn.parentElement) btn.parentElement.removeChild(btn);
-      btn = document.createElement("button");
-      btn.id = "settings-close";
-      btn.type = "button";
-      btn.setAttribute("aria-label", "Fermer");
-      btn.textContent = "×";
-      btn.addEventListener("click", closeSettingsModal);
-      settingsBox.prepend(btn);
+  function delayHTML(delay) {
+    if (appSettings.showDelay && delay !== null && Math.abs(delay) >= appSettings.delayShowThresholdMin) {
+      const d = Math.abs(delay);
+      const sign = delay >= 0 ? "+" : "-";
+      return d >= appSettings.delayRedThresholdMin ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
     }
+    return "";
   }
-  function openSettingsModal() {
-    ensureSettingsClose();
-    settingsBox.classList.remove("hidden");
-    settingsBox.classList.add("modal-open");
-    document.body.classList.add("settings-open");
-  }
+
+  const filterModal = setupModal({ box: filterBox, toggleBtn: toggleFilterBtn, closeId: "filter-close", bodyClass: "filters-open" });
+  const settingsModal = setupModal({ box: settingsBox, toggleBtn: btnSettings, closeId: "settings-close", bodyClass: "settings-open" });
   function renderSettingsBox() {
     if (!settingsBox) return;
     settingsBox.innerHTML = `
@@ -838,7 +804,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </label>
       </div>
     `;
-    ensureSettingsClose();
+    settingsModal.ensureClose();
 
     settingsBox.querySelectorAll('input[name="refresh-interval"]').forEach(r => {
       r.checked = Number(r.value) === appSettings.refreshMs;
@@ -889,20 +855,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   renderSettingsBox();
-  btnSettings?.addEventListener("click", () => {
-    if (document.body.classList.contains("settings-open")) closeSettingsModal();
-    else openSettingsModal();
-  });
-  document.addEventListener("click", (e) => {
-    if (document.body.classList.contains("settings-open")) {
-      const inModal = settingsBox.contains(e.target);
-      const onToggle = btnSettings?.contains(e.target);
-      if (!inModal && !onToggle) closeSettingsModal();
-    }
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && document.body.classList.contains("settings-open")) closeSettingsModal();
-  });
 
   function isMobileDevice() {
     return window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -952,7 +904,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const interactiveElements = [
       ".line-card", ".departure-card", ".departure-item", ".line-checkbox", 
-      "#quick-actions button", "#thermo-back", ".qa-btn",
+      "#quick-actions button", "#thermo-back",
       "#stop-name", "#stop-suggestions div",
       "#fullscreen-toggle"
     ];
@@ -966,120 +918,40 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  function renderDepartures(departures) {
+  function resetDeparturesView(timeMode) {
     departuresContainer.innerHTML = "";
-    departuresContainer.classList.remove("time-mode");
+    departuresContainer.classList.toggle("time-mode", timeMode);
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
+  }
 
-    const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
+  function renderDepartures(departures) {
+    resetDeparturesView(false);
+
+    const filtered = departures.filter(dep => selectedLines.has(lineKeyOf(dep)));
     const groupedByLine = {};
     const nowMs = Date.now();
 
     filtered.forEach(dep => {
-      const key = `${dep.category || ""} ${dep.number || ""}`;
+      const key = lineKeyOf(dep);
       if (!groupedByLine[key]) groupedByLine[key] = {};
       const dest = dep.to || "";
       if (!groupedByLine[key][dest]) groupedByLine[key][dest] = [];
-
-      const schedMs = new Date(dep.stop?.departure).getTime();
-      const delayMin = Number(dep.stop?.delay || 0);
-      const effMs = Number.isFinite(schedMs) ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0) : NaN;
-      const remaining = Number.isFinite(effMs) ? Math.max(0, Math.round((effMs - nowMs) / 60000)) : null;
-
-      if (Number.isFinite(effMs) && (effMs - nowMs) <= DISPLAY_WINDOW_MS) {
-        groupedByLine[key][dest].push({
-          raw: dep,
-          schedMs,
-          effMs,
-          minutesLeft: remaining,
-          timeStr: fmtHM(new Date(schedMs)),
-          platform: (dep.stop?.platform && dep.category !== "GB" && dep.stop.platform !== "null") ? dep.stop.platform : "",
-          delay: (dep.stop && dep.stop.delay !== undefined && dep.stop.delay !== null) ? dep.stop.delay : null
-        });
-      }
+      const info = toDepartureInfo(dep, nowMs);
+      if (info) groupedByLine[key][dest].push(info);
     });
 
-    const filteredLines = Object.entries(groupedByLine).filter(([lineKey, destinations]) => {
+    const filteredLines = Object.entries(groupedByLine).filter(([, destinations]) => {
       return Object.values(destinations).some(times => times.length > 0);
     });
 
-    const sortedLines = filteredLines.sort(([a], [b]) => {
-      const numA = a.split(" ").pop();
-      const numB = b.split(" ").pop();
-      
-      const pureNumA = parseInt(numA.match(/^\d+/)?.[0]);
-      const pureNumB = parseInt(numB.match(/^\d+/)?.[0]);
-      
-      const isNumA = !isNaN(pureNumA);
-      const isNumB = !isNaN(pureNumB);
-      
-      if (isNumA && isNumB) {
-        if (pureNumA !== pureNumB) {
-          return pureNumA - pureNumB;
-        }
-        return numA.localeCompare(numB);
-      }
-      
-      if (isNumA) return -1;
-      if (isNumB) return 1;
-      
-      return numA.localeCompare(numB);
-    });
+    const sortedLines = filteredLines.sort(([a], [b]) => compareLineKeys(a, b));
 
     for (const [lineKey, destinations] of sortedLines) {
       const [category, ...numParts] = lineKey.split(" ");
       const number = numParts.join(" ").trim();
-      let content = "";
-      let lineColor = "";
-
-      const firstDep = Object.values(destinations)[0]?.[0]?.raw;
-      const operator = firstDep?.operator;
-      if (operator && lineColors[operator]) {
-        let colorKey = null;
-        const numOrLetter = content || number;
-        if (lineColors[operator][numOrLetter]) {
-          colorKey = numOrLetter;
-        } else {
-          const numericPart = numOrLetter.match(/^\d+/)?.[0];
-          if (numericPart && lineColors[operator][numericPart]) {
-            colorKey = numericPart;
-          } else if (lineColors[operator]["default"]) {
-            colorKey = "default";
-          }
-        }
-        if (colorKey) {
-          if (category === "B" || category === "T" || category === "M") {
-            content = number || category;
-            lineColor = lineColors[operator][colorKey];
-          } else if (category === "FUN") {
-            content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
-            lineColor = lineColors[operator][colorKey];
-          }
-        }
-      }
-
-      if (!lineColor) {
-        if (category === "B" || category === "T" || category === "M") {
-          content = number || category;
-          lineColor = lineColors.categories.default;
-        } else if (category === "BAT") {
-          content = number && !number.startsWith("0") ? `BAT ${number}` : "BAT";
-          lineColor = lineColors.categories.default;
-        } else if (category === "FUN") {
-          content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
-          lineColor = lineColors.categories.default;
-        } else if (category === "GB") {
-          content = "🚠";
-          lineColor = lineColors.categories.GB;
-        } else if (lineColors.categories.trains.includes(category)) {
-          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
-          lineColor = lineColors.categories.trainsColor;
-        } else {
-          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
-          lineColor = lineColors[content] || lineColors.categories.trainsColor;
-        }
-      }
+      const firstDep = Object.values(destinations)[0]?.[0]?.dep;
+      const badge = getLineBadge(category, number, firstDep?.operator);
 
       const card = document.createElement("div");
       card.className = "line-card";
@@ -1087,42 +959,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const lineRow = document.createElement("div");
       lineRow.className = "line-row";
-      const badge = document.createElement("span");
-      badge.className = "line-badge";
-      badge.style.backgroundColor = lineColor;
-      badge.textContent = content;
-      lineRow.appendChild(badge);
+      lineRow.appendChild(createLineBadge(badge));
       card.appendChild(lineRow);
-      adjustLineBadgePadding(badge);
 
       const isExpanded = expandedLineKey === lineKey;
+      if (!isExpanded) card.classList.add("compact");
 
-      if (isExpanded) {
-        for (const [dest, times] of Object.entries(destinations)) {
-          if (times.length === 0) continue;
-          let displayDest = dest;
-          let suffixAirport = (displayDest === "Zürich Flughafen" || displayDest === "Genève-Aéroport") ? " ✈" : "";
-          const destDiv = document.createElement("div");
-          destDiv.className = "destination-title";
-          destDiv.innerHTML = formatStopNameHTML(displayDest) + escapeHtml(suffixAirport);
-          applyPendingStyle(destDiv);
-          card.appendChild(destDiv);
+      for (const [dest, times] of Object.entries(destinations)) {
+        if (!times.length) continue;
+        const destDiv = document.createElement("div");
+        destDiv.className = "destination-title";
+        fillDestination(destDiv, dest);
+        card.appendChild(destDiv);
 
+        if (isExpanded) {
           const list = document.createElement("div");
           list.className = "departure-times";
           list.innerHTML = times.slice(0, 5).map(o => {
-            let delayStr = "";
-            if (appSettings.showDelay && o.delay !== null && Math.abs(o.delay) >= appSettings.delayShowThresholdMin) {
-              const d = Math.abs(o.delay);
-              const sign = o.delay >= 0 ? "+" : "-";
-              delayStr = d >= appSettings.delayRedThresholdMin ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
-            }
             const pl = o.platform ? ` pl. ${escapeHtml(o.platform)}` : "";
-            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}" data-train="${escapeHtml(o.trainName || '')}">${o.timeStr}${delayStr} (${o.minutesLeft} min)${pl}</span>`;
+            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}" data-train="${escapeHtml(o.trainName || '')}">${o.timeStr}${delayHTML(o.delay)} (${o.minutesLeft} min)${pl}</span>`;
           }).join("");
           card.appendChild(list);
+        } else {
+          const strip = document.createElement("div");
+          strip.className = "countdown-strip";
+          const mins = times.map(o => o.minutesLeft).sort((a,b)=>a-b).slice(0,5);
+          strip.innerHTML = mins.map((m, i) => `<span class="cd${i===0?' first':''}">${m}'</span>`).join("");
+          card.appendChild(strip);
         }
+      }
 
+      if (isExpanded) {
         card.addEventListener("click", (e) => {
           const depEl = e.target.closest(".departure-item");
           if (!depEl) {
@@ -1133,28 +1000,9 @@ document.addEventListener("DOMContentLoaded", () => {
           const dest = depEl.getAttribute("data-dest");
           const timeStr = depEl.getAttribute("data-time");
           const trainName = depEl.getAttribute("data-train");
-          showThermometer(STOP_NAME, dest, timeStr, content, trainName);
+          showThermometer(STOP_NAME, dest, timeStr, badge.label, trainName);
         });
       } else {
-        card.classList.add("compact");
-
-        for (const [dest, times] of Object.entries(destinations)) {
-          if (!times.length) continue;
-
-          const destDiv = document.createElement("div");
-          destDiv.className = "destination-title";
-          const suffixAirport = (dest === "Zürich Flughafen" || dest === "Genève-Aéroport") ? " ✈" : "";
-          destDiv.innerHTML = formatStopNameHTML(dest) + escapeHtml(suffixAirport);
-          applyPendingStyle(destDiv);
-          card.appendChild(destDiv);
-
-          const strip = document.createElement("div");
-          strip.className = "countdown-strip";
-          const mins = times.map(o => o.minutesLeft).sort((a,b)=>a-b).slice(0,5);
-          strip.innerHTML = mins.map((m, i) => `<span class="cd${i===0?' first':''}">${m}'</span>`).join("");
-          card.appendChild(strip);
-        }
-
         card.addEventListener("click", () => {
           expandedLineKey = lineKey;
           renderDepartures(departures);
@@ -1166,119 +1014,29 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderDeparturesByTime(departures) {
-    departuresContainer.innerHTML = "";
-    departuresContainer.classList.add("time-mode");
-    if (thermo) thermo.style.display = "none";
-    departuresContainer.style.display = "";
+    resetDeparturesView(true);
 
-    const filtered = departures.filter(dep => selectedLines.has(`${dep.category || ""} ${dep.number || ""}`));
+    const filtered = departures.filter(dep => selectedLines.has(lineKeyOf(dep)));
     const nowMs = Date.now();
-    
-    const allDepartures = [];
-    
-    filtered.forEach(dep => {
-      const schedMs = new Date(dep.stop?.departure).getTime();
-      const delayMin = Number(dep.stop?.delay || 0);
-      const effMs = Number.isFinite(schedMs) ? schedMs + (Number.isFinite(delayMin) ? delayMin * 60000 : 0) : NaN;
-      const remaining = Number.isFinite(effMs) ? Math.max(0, Math.round((effMs - nowMs) / 60000)) : null;
-
-      if (Number.isFinite(effMs) && (effMs - nowMs) <= DISPLAY_WINDOW_MS) {
-        allDepartures.push({
-          raw: dep,
-          schedMs,
-          effMs,
-          minutesLeft: remaining,
-          timeStr: fmtHM(new Date(schedMs)),
-          platform: (dep.stop?.platform && dep.category !== "GB" && dep.stop.platform !== "null") ? dep.stop.platform : "",
-          delay: (dep.stop && dep.stop.delay !== undefined && dep.stop.delay !== null) ? dep.stop.delay : null,
-          lineKey: `${dep.category || ""} ${dep.number || ""}`,
-          destination: dep.to || "",
-          trainName: dep.name || "",
-          category: dep.category || "",
-          number: dep.number || "",
-          operator: dep.operator
-        });
-      }
-    });
+    const allDepartures = filtered.map(dep => toDepartureInfo(dep, nowMs)).filter(Boolean);
 
     allDepartures.sort((a, b) => a.effMs - b.effMs);
 
-    allDepartures.forEach(depInfo => {
-      const { raw, timeStr, minutesLeft, platform, delay, destination, trainName, category, number, operator } = depInfo;
-      
-      let content = "";
-      let lineColor = "";
-
-      if (operator && lineColors[operator]) {
-        let colorKey = null;
-        const numOrLetter = content || number;
-        
-        if (lineColors[operator][numOrLetter]) {
-          colorKey = numOrLetter;
-        } else {
-          const numericPart = numOrLetter.match(/^\d+/)?.[0];
-          if (numericPart && lineColors[operator][numericPart]) {
-            colorKey = numericPart;
-          } else if (lineColors[operator]["default"]) {
-            colorKey = "default";
-          }
-        }
-        
-        if (colorKey) {
-          if (category === "B" || category === "T" || category === "M") {
-            content = number || category;
-            lineColor = lineColors[operator][colorKey];
-          } else if (category === "FUN") {
-            content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
-            lineColor = lineColors[operator][colorKey];
-          }
-        }
-      }
-
-      if (!lineColor) {
-        if (category === "B" || category === "T" || category === "M") {
-          content = number || category;
-          lineColor = lineColors.categories.default;
-        } else if (category === "BAT") {
-          content = number && !number.startsWith("0") ? `BAT ${number}` : "BAT";
-          lineColor = lineColors.categories.default;
-        } else if (category === "FUN") {
-          content = number && !number.startsWith("0") ? `Funi ${number}` : "Funi";
-          lineColor = lineColors.categories.default;
-        } else if (category === "GB") {
-          content = "🚠";
-          lineColor = lineColors.categories.GB;
-        } else if (lineColors.categories.trains.includes(category)) {
-          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
-          lineColor = lineColors.categories.trainsColor;
-        } else {
-          content = number && !number.startsWith("0") ? `${category} ${number}` : category;
-          lineColor = lineColors[content] || lineColors.categories.trainsColor;
-        }
-      }
+    allDepartures.forEach(({ dep, timeStr, minutesLeft, platform, delay }) => {
+      const destination = dep.to || "";
+      const trainName = dep.name || "";
+      const badge = getLineBadge(dep.category || "", dep.number || "", dep.operator);
 
       const card = document.createElement("div");
       card.className = "departure-card";
-      
-      const badge = document.createElement("span");
-      badge.className = "line-badge";
-      badge.style.backgroundColor = lineColor;
-      badge.textContent = content;
-      card.appendChild(badge);
-      adjustLineBadgePadding(badge);
+      card.appendChild(createLineBadge(badge));
 
       const infoDiv = document.createElement("div");
       infoDiv.className = "departure-info";
 
       const timeSpan = document.createElement("span");
       timeSpan.className = "departure-time";
-      let delayStr = "";
-      if (appSettings.showDelay && delay !== null && Math.abs(delay) >= appSettings.delayShowThresholdMin) {
-        const d = Math.abs(delay);
-        const sign = delay >= 0 ? "+" : "-";
-        delayStr = d >= appSettings.delayRedThresholdMin ? ` <span class="late">${sign}${d}'</span>` : ` ${sign}${d}'`;
-      }
-      timeSpan.innerHTML = `${timeStr}${delayStr}`;
+      timeSpan.innerHTML = `${timeStr}${delayHTML(delay)}`;
       infoDiv.appendChild(timeSpan);
 
       const countdownSpan = document.createElement("span");
@@ -1288,9 +1046,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const destSpan = document.createElement("span");
       destSpan.className = "departure-destination";
-      const suffixAirport = (destination === "Zürich Flughafen" || destination === "Genève-Aéroport") ? " ✈" : "";
-      destSpan.innerHTML = formatStopNameHTML(destination) + escapeHtml(suffixAirport);
-      applyPendingStyle(destSpan);
+      fillDestination(destSpan, destination);
       infoDiv.appendChild(destSpan);
 
       if (platform) {
@@ -1303,7 +1059,7 @@ document.addEventListener("DOMContentLoaded", () => {
       card.appendChild(infoDiv);
 
       card.addEventListener("click", () => {
-        showThermometer(STOP_NAME, destination, timeStr, content, trainName);
+        showThermometer(STOP_NAME, destination, timeStr, badge.label, trainName);
       });
 
       departuresContainer.appendChild(card);
@@ -1320,11 +1076,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const intermediateStation = cachedPassList[0]?.station?.name;
 
         if (intermediateStation && intermediateStation !== fromName) {
-          const now = new Date();
-          const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-          const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(intermediateStation)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
-          const data = await fetch(url).then(r => r.json());
-          const conn = (data.connections || [])[0];
+          const conn = await fetchFirstConnection(fromName, intermediateStation, hhmm);
           let firstSegment = [];
 
           if (conn && Array.isArray(conn.sections)) {
@@ -1345,17 +1097,11 @@ document.addEventListener("DOMContentLoaded", () => {
             firstSegment.pop();
           }
           passList = [...firstSegment, ...cachedPassList];
-          console.log(`Thermomètre hybride: ${fromName} → ${intermediateStation} (API) + ${intermediateStation} → ${toName} (cache)`);
         } else {
           passList = cachedPassList;
-          console.log(`Thermomètre depuis cache pour train ${trainName}`);
         }
       } else {
-        const now = new Date();
-        const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-        const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
-        const data = await fetch(url).then(r => r.json());
-        const conn = (data.connections || [])[0];
+        const conn = await fetchFirstConnection(fromName, toName, hhmm);
         if (conn && Array.isArray(conn.sections)) {
           const vehicleSection = conn.sections.find(s => s.journey && Array.isArray(s.journey.passList));
           if (vehicleSection) passList = vehicleSection.journey.passList;
@@ -1363,7 +1109,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const header = thermo.querySelector("#thermo-title");
-      header.textContent = `Thermomètre ${lineLabel} – ${fromName} → ${toName}`;
+      header.textContent = `${fromName} → ${toName}`;
       const body = thermo.querySelector("#thermo-body");
       body.innerHTML = "";
 
@@ -1376,8 +1122,8 @@ document.addEventListener("DOMContentLoaded", () => {
           const sched = p.departure || p.arrival;
           const delay = Number(p.departureDelay ?? p.arrivalDelay ?? p.delay ?? 0);
           const t = sched ? new Date(sched) : null;
-          const effMs = t ? (t.getTime() + (Number.isFinite(delay) ? delay * 60000 : 0)) : null;
-          const minutesLeft = effMs ? Math.max(0, Math.round((effMs - nowMs)/60000)) : null;
+          const effMs = t ? withDelay(t.getTime(), delay) : null;
+          const minutesLeft = effMs ? minutesUntil(effMs, nowMs) : null;
 
           const row = document.createElement("div");
           row.className = "thermo-row";
