@@ -624,21 +624,23 @@ document.addEventListener("DOMContentLoaded", () => {
       for (const other of departures) {
         if (other.name === currentName) {
           if (other.to && other.to !== dep.to && !isSwissStation(other.to)) {
-            try {
-              const connURL = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(dep.to)}&to=${encodeURIComponent(other.to)}&limit=1`;
-              const connData = await fetch(connURL, { signal }).then(r => r.json());
-              const conn = (connData.connections || [])[0];
+            if (!trainPassListCache[currentName]) {
+              try {
+                const connURL = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(dep.to)}&to=${encodeURIComponent(other.to)}&limit=1`;
+                const connData = await fetch(connURL, { signal }).then(r => r.json());
+                const conn = (connData.connections || [])[0];
 
-              if (conn && Array.isArray(conn.sections)) {
-                for (const section of conn.sections) {
-                  if (section.journey && section.journey.name === currentName && Array.isArray(section.journey.passList)) {
-                    trainPassListCache[currentName] = section.journey.passList;
-                    break;
+                if (conn && Array.isArray(conn.sections)) {
+                  for (const section of conn.sections) {
+                    if (section.journey && section.journey.name === currentName && Array.isArray(section.journey.passList)) {
+                      trainPassListCache[currentName] = section.journey.passList;
+                      break;
+                    }
                   }
                 }
+              } catch (e) {
+                if (e.name !== "AbortError") console.error(`Erreur récupération passList pour train ${currentName}`, e);
               }
-            } catch (e) {
-              if (e.name !== "AbortError") console.error(`Erreur récupération passList pour train ${currentName}`, e);
             }
 
             return other.to;
@@ -662,6 +664,71 @@ document.addEventListener("DOMContentLoaded", () => {
       return false;
     }
   }
+  function buildLineFilter(lines, departures) {
+    filterBox.innerHTML = `
+      <div id="select-all-container" style="display:flex;gap:12px;margin-bottom:10px;">
+        <button id="select-all" type="button" class="filter-toggle-btn" aria-label="Tout sélectionner">
+          <input type="checkbox" checked disabled>
+        </button>
+        <button id="deselect-all" type="button" class="filter-toggle-btn" aria-label="Tout désélectionner">
+          <input type="checkbox" disabled>
+        </button>
+      </div>
+      <div id="checkboxes-container"></div>
+    `;
+    filterModal.ensureClose();
+
+    const checkboxesContainer = filterBox.querySelector("#checkboxes-container");
+    lines.forEach(line => {
+      const [category, ...numParts] = line.split(" ");
+      const number = numParts.join(" ").trim();
+      const firstDep = departures.find(d => lineKeyOf(d) === line);
+      const badgeInfo = getLineBadge(category, number, firstDep?.operator);
+      const checked = selectedLines.has(line);
+
+      const item = document.createElement("label");
+      item.className = "filter-item line-filter-item";
+
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = line;
+      input.checked = checked;
+      input.className = "line-checkbox visually-hidden-checkbox";
+
+      const badge = createLineBadge(badgeInfo);
+      if (!checked) badge.classList.add("line-badge-off");
+
+      item.appendChild(input);
+      item.appendChild(badge);
+      checkboxesContainer.appendChild(item);
+    });
+
+    filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
+      cb.addEventListener("change", () => {
+        if (cb.checked) selectedLines.add(cb.value);
+        else selectedLines.delete(cb.value);
+        cb.nextElementSibling?.classList.toggle("line-badge-off", !cb.checked);
+        renderCurrentMode(departures);
+      });
+    });
+    filterBox.querySelector("#select-all")?.addEventListener("click", () => {
+      lines.forEach(l => selectedLines.add(l));
+      filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
+        cb.checked = true;
+        cb.nextElementSibling?.classList.remove("line-badge-off");
+      });
+      renderCurrentMode(departures);
+    });
+    filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
+      selectedLines.clear();
+      filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
+        cb.checked = false;
+        cb.nextElementSibling?.classList.add("line-badge-off");
+      });
+      renderCurrentMode(departures);
+    });
+  }
+
   async function fetchDepartures() {
     const key = STOP_NAME;
     if (!key || String(key).trim() === "") return;
@@ -680,83 +747,26 @@ document.addEventListener("DOMContentLoaded", () => {
       lines.sort(compareLineKeys);
       if (selectedLines.size === 0) lines.forEach(l => selectedLines.add(l));
 
-      destinationsPending = !hasComma(STOP_NAME);
+      const needsDestinationCheck = dep =>
+        !hasComma(STOP_NAME) &&
+        dep.to &&
+        !isSwissStation(dep.to) &&
+        lineColors.categories.trains.includes(dep.category);
+
+      // En italique/sablier seulement si une vérification réseau est réellement nécessaire
+      // (gare de destination pas encore en cache depuis un rafraîchissement précédent).
+      destinationsPending = departures.some(dep => needsDestinationCheck(dep) && !stationDeparturesCache[dep.to]);
       renderInBackground(departures);
+      buildLineFilter(lines, departures);
 
       await Promise.all(departures.map(async dep => {
-        if (!hasComma(STOP_NAME) &&
-            dep.to &&
-            !isSwissStation(dep.to) &&
-            lineColors.categories.trains.includes(dep.category)) {
+        if (needsDestinationCheck(dep)) {
           const adjusted = await adjustTrainDestination(dep, signal);
           if (adjusted) dep.to = adjusted;
         }
       }));
       if (signal.aborted) return;
       destinationsPending = false;
-
-      filterBox.innerHTML = `
-        <div id="select-all-container" style="display:flex;gap:12px;margin-bottom:10px;">
-          <button id="select-all" type="button" class="filter-toggle-btn" aria-label="Tout sélectionner">
-            <input type="checkbox" checked disabled>
-          </button>
-          <button id="deselect-all" type="button" class="filter-toggle-btn" aria-label="Tout désélectionner">
-            <input type="checkbox" disabled>
-          </button>
-        </div>
-        <div id="checkboxes-container"></div>
-      `;
-      filterModal.ensureClose();
-
-      const checkboxesContainer = filterBox.querySelector("#checkboxes-container");
-      lines.forEach(line => {
-        const [category, ...numParts] = line.split(" ");
-        const number = numParts.join(" ").trim();
-        const firstDep = departures.find(d => lineKeyOf(d) === line);
-        const badgeInfo = getLineBadge(category, number, firstDep?.operator);
-        const checked = selectedLines.has(line);
-
-        const item = document.createElement("label");
-        item.className = "filter-item line-filter-item";
-
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.value = line;
-        input.checked = checked;
-        input.className = "line-checkbox visually-hidden-checkbox";
-
-        const badge = createLineBadge(badgeInfo);
-        if (!checked) badge.classList.add("line-badge-off");
-
-        item.appendChild(input);
-        item.appendChild(badge);
-        checkboxesContainer.appendChild(item);
-      });
-
-      filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
-        cb.addEventListener("change", () => {
-          if (cb.checked) selectedLines.add(cb.value);
-          else selectedLines.delete(cb.value);
-          cb.nextElementSibling?.classList.toggle("line-badge-off", !cb.checked);
-          renderCurrentMode(departures);
-        });
-      });
-      filterBox.querySelector("#select-all")?.addEventListener("click", () => {
-        lines.forEach(l => selectedLines.add(l));
-        filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
-          cb.checked = true;
-          cb.nextElementSibling?.classList.remove("line-badge-off");
-        });
-        renderCurrentMode(departures);
-      });
-      filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
-        selectedLines.clear();
-        filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
-          cb.checked = false;
-          cb.nextElementSibling?.classList.add("line-badge-off");
-        });
-        renderCurrentMode(departures);
-      });
 
       renderInBackground(departures);
 

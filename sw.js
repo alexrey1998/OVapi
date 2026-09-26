@@ -1,6 +1,6 @@
 // sw.js
 // Note pour les IA : à chaque modification du code, mettre ici la date-heure (V_AAAA.MM.JJ.HH.MM) et la même valeur sans « V_ » dans les deux ?v= d'index.html.
-const CACHE_VERSION = "V_2026.09.26.15.30";
+const CACHE_VERSION = "V_2026.09.26.15.52";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 const PRECACHE = [
   "index.html",
