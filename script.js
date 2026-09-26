@@ -244,6 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
       <div id="thermo-body"></div>
     `;
     thermo.querySelector("#thermo-back").addEventListener("click", () => {
+      clearMarqueeTimers(thermoMarqueeTimers);
       thermo.style.display = "none";
       departuresContainer.style.display = "";
     });
@@ -695,35 +696,65 @@ document.addEventListener("DOMContentLoaded", () => {
       destinationsPending = false;
 
       filterBox.innerHTML = `
-        <div id="select-all-container" style="display:flex;gap:8px;margin-bottom:8px;">
-          <button id="select-all">Sélectionner tout</button>
-          <button id="deselect-all">Désélectionner tout</button>
+        <div id="select-all-container" style="display:flex;gap:12px;margin-bottom:10px;">
+          <button id="select-all" type="button" class="filter-toggle-btn" aria-label="Tout sélectionner">
+            <input type="checkbox" checked disabled>
+          </button>
+          <button id="deselect-all" type="button" class="filter-toggle-btn" aria-label="Tout désélectionner">
+            <input type="checkbox" disabled>
+          </button>
         </div>
-        <div id="checkboxes-container">
-          ${lines.map(line => {
-            const checked = selectedLines.has(line) ? "checked" : "";
-            return `<label class="filter-item">
-              <input type="checkbox" value="${escapeHtml(line)}" ${checked} class="line-checkbox"> Ligne ${escapeHtml(line)}
-            </label>`;
-          }).join("")}
-        </div>
+        <div id="checkboxes-container"></div>
       `;
       filterModal.ensureClose();
+
+      const checkboxesContainer = filterBox.querySelector("#checkboxes-container");
+      lines.forEach(line => {
+        const [category, ...numParts] = line.split(" ");
+        const number = numParts.join(" ").trim();
+        const firstDep = departures.find(d => lineKeyOf(d) === line);
+        const badgeInfo = getLineBadge(category, number, firstDep?.operator);
+        const checked = selectedLines.has(line);
+
+        const item = document.createElement("label");
+        item.className = "filter-item line-filter-item";
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = line;
+        input.checked = checked;
+        input.className = "line-checkbox visually-hidden-checkbox";
+
+        const badge = createLineBadge(badgeInfo);
+        if (!checked) badge.classList.add("line-badge-off");
+
+        item.appendChild(input);
+        item.appendChild(badge);
+        checkboxesContainer.appendChild(item);
+      });
+
       filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
         cb.addEventListener("change", () => {
           if (cb.checked) selectedLines.add(cb.value);
           else selectedLines.delete(cb.value);
+          cb.nextElementSibling?.classList.toggle("line-badge-off", !cb.checked);
           renderCurrentMode(departures);
         });
       });
       filterBox.querySelector("#select-all")?.addEventListener("click", () => {
         lines.forEach(l => selectedLines.add(l));
-        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = true);
+        filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
+          cb.checked = true;
+          cb.nextElementSibling?.classList.remove("line-badge-off");
+        });
         renderCurrentMode(departures);
       });
       filterBox.querySelector("#deselect-all")?.addEventListener("click", () => {
         selectedLines.clear();
-        filterBox.querySelectorAll(".line-checkbox").forEach(cb => cb.checked = false);
+        filterBox.querySelectorAll(".line-checkbox").forEach(cb => {
+          cb.checked = false;
+          cb.nextElementSibling?.classList.add("line-badge-off");
+        });
         renderCurrentMode(departures);
       });
 
@@ -764,12 +795,14 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyPendingStyle(el) {
     if (!destinationsPending) return;
     el.classList.add("destination-pending");
-    el.insertAdjacentHTML("beforeend", ' <span class="pending-hourglass" aria-hidden="true">⏳</span>');
+    const target = el.querySelector(".marquee-inner") || el;
+    target.insertAdjacentHTML("beforeend", ' <span class="pending-hourglass" aria-hidden="true">⏳</span>');
   }
 
   const AIRPORTS = ["Zürich Flughafen", "Genève-Aéroport"];
   function fillDestination(el, dest) {
-    el.innerHTML = formatStopNameHTML(dest) + (AIRPORTS.includes(dest) ? " ✈" : "");
+    const text = formatStopNameHTML(dest) + (AIRPORTS.includes(dest) ? " ✈" : "");
+    el.innerHTML = `<span class="marquee-inner">${text}</span>`;
     applyPendingStyle(el);
   }
 
@@ -919,10 +952,56 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function resetDeparturesView(timeMode) {
+    clearMarqueeTimers(departureMarqueeTimers);
     departuresContainer.innerHTML = "";
     departuresContainer.classList.toggle("time-mode", timeMode);
     if (thermo) thermo.style.display = "none";
     departuresContainer.style.display = "";
+  }
+
+  // Défilement en boucle des noms de destination/arrêt trop longs pour leur espace,
+  // avec une pause de 2s à chaque retour au premier caractère.
+  // Deux registres séparés (cartes / thermomètre) pour qu'ouvrir l'un n'arrête pas l'autre en arrière-plan.
+  let departureMarqueeTimers = [];
+  let thermoMarqueeTimers = [];
+  function clearMarqueeTimers(bucket) {
+    bucket.forEach(clearTimeout);
+    bucket.length = 0;
+  }
+  function setupMarquee(container, bucket) {
+    const inner = container.querySelector(".marquee-inner");
+    if (!inner) return;
+    const overflow = Math.round(inner.scrollWidth - container.clientWidth);
+    if (overflow <= 1) return;
+    const msPerChar = 150; // vitesse : temps par caractère, uniforme quelle que soit la longueur du texte
+    const pauseMs = 2000;
+    const charCount = Math.max(1, inner.textContent.length);
+
+    // Boucle continue : texte, 3 espaces, puis le même texte à nouveau.
+    // On défile jusqu'à ce que la 2e copie arrive à la position de départ de la 1re (visuellement identique),
+    // ce qui permet de reboucler sans à-coup après la pause.
+    const originalHTML = inner.innerHTML;
+    inner.innerHTML = `<span class="marquee-copy">${originalHTML}</span><span class="marquee-gap">&nbsp;&nbsp;&nbsp;</span><span class="marquee-copy">${originalHTML}</span>`;
+    const secondCopy = inner.children[2];
+    const distance = secondCopy.offsetLeft;
+    const scrollMs = charCount * msPerChar;
+
+    function cycle() {
+      inner.style.transition = "none";
+      inner.style.transform = "translateX(0)";
+      const holdTimer = setTimeout(() => {
+        inner.style.transition = `transform ${scrollMs}ms linear`;
+        inner.style.transform = `translateX(-${distance}px)`;
+      }, pauseMs);
+      const loopTimer = setTimeout(cycle, pauseMs + scrollMs);
+      bucket.push(holdTimer, loopTimer);
+    }
+    cycle();
+  }
+  function setupMarquees(root, bucket) {
+    requestAnimationFrame(() => {
+      root.querySelectorAll(".departure-destination, .thermo-stop").forEach(el => setupMarquee(el, bucket));
+    });
   }
 
   function renderDepartures(departures) {
@@ -1064,6 +1143,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       departuresContainer.appendChild(card);
     });
+    setupMarquees(departuresContainer, departureMarqueeTimers);
   }
 
   async function showThermometer(fromName, toName, hhmm, lineLabel, trainName) {
@@ -1111,6 +1191,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const header = thermo.querySelector("#thermo-title");
       header.textContent = `${fromName} → ${toName}`;
       const body = thermo.querySelector("#thermo-body");
+      clearMarqueeTimers(thermoMarqueeTimers);
       body.innerHTML = "";
 
       if (!passList || passList.length === 0) {
@@ -1138,7 +1219,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
           const nd = document.createElement("div");
           nd.className = "thermo-stop";
-          nd.textContent = name;
+          nd.innerHTML = `<span class="marquee-inner">${escapeHtml(name)}</span>`;
           row.appendChild(tdiv);
           row.appendChild(nd);
           body.appendChild(row);
@@ -1149,6 +1230,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const target = body.children[idx];
           target?.scrollIntoView({ block: "center" });
         }
+        setupMarquees(body, thermoMarqueeTimers);
       }
 
       departuresContainer.style.display = "none";

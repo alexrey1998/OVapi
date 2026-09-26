@@ -212,7 +212,12 @@ h1 {
   flex: 1;
   min-width: 150px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marquee-inner {
+  display: inline-block;
+  position: relative;
   white-space: nowrap;
 }
 
@@ -376,7 +381,6 @@ body.settings-open::before {
 }
 .thermo-stop {
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
