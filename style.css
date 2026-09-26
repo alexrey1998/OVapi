@@ -107,6 +107,43 @@ h1 {
   gap: 5px;
   margin-bottom: 5px;
 }
+.filter-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+}
+.filter-toggle-btn:hover { background: #f0f0f0; }
+.filter-toggle-btn input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+#checkboxes-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.line-filter-item {
+  margin-bottom: 0;
+  cursor: pointer;
+}
+.line-filter-item .visually-hidden-checkbox {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.line-badge-off {
+  background-color: #e0e0e0 !important;
+  color: #999 !important;
+}
 
 #departures {
   display: grid;
