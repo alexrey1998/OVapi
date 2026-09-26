@@ -189,7 +189,8 @@ h1 {
 .departure-card .departure-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  column-gap: 12px;
+  row-gap: 2px;
   flex: 1;
   min-width: 0;
   flex-wrap: wrap;
