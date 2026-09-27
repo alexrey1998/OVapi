@@ -371,14 +371,29 @@ body.settings-open::before {
 .thermo-row {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 12px;
+  gap: 6px;
   padding: 10px 0;
   border-bottom: 1px solid #e5e7eb;
 }
 .thermo-time {
   font-variant-numeric: tabular-nums;
-  min-width: 150px;
+  min-width: 125px;
 }
+.thermo-row-link { cursor: pointer; }
+.thermo-row-link .thermo-stop { color: #007bff; }
+#jump-back {
+  margin: -10px 0 16px 0;
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #007bff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  max-width: 100%;
+  text-align: left;
+}
+#jump-back.hidden { display: none; }
 .thermo-stop {
   overflow: hidden;
   white-space: nowrap;
