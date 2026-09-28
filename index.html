@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#007bff">
 <!-- Note pour les IA : à chaque modification du code, mettre à jour les deux ?v= (date-heure AAAA.MM.JJ.HH.MM) et CACHE_VERSION dans sw.js. -->
-<link rel="stylesheet" href="style.css?v=2026.09.27.15.56">
+<link rel="stylesheet" href="style.css?v=2026.09.28.04.51">
 
 <link rel="icon" type="image/svg+xml" href="icons/logo.svg">
 <link rel="icon" sizes="32x32" href="icons/icon-32.png">
@@ -18,7 +18,7 @@
 </head>
 <body>
 
-<h1 id="stop-name" contenteditable="true" spellcheck="false">Entrez le nom de l'arrêt ici</h1>
+<h1 id="stop-name" contenteditable="true" spellcheck="false" data-placeholder="Entrez le nom de l'arrêt ici">Entrez le nom de l'arrêt ici</h1>
 
 <button id="jump-back" type="button" class="hidden"></button>
 
@@ -26,20 +26,20 @@
 
 <div id="control-bar">
   <p id="last-update">
-    <span>Màj : <span id="update-time">-</span></span>
+    <span><span data-i18n="updated">Màj :</span> <span id="update-time">-</span></span>
     <span id="quick-actions">
-      <button id="btn-gps" aria-label="Mettre à jour la position" title="Mettre à jour la position">📍</button>
-      <button id="btn-refresh" aria-label="Recharger les départs" title="Recharger les départs">↻</button>
-      <button id="btn-toggle-nearby" aria-label="Basculer 1er/2e arrêt" title="Basculer 1er/2e arrêt">⇄</button>
-      <button id="btn-toggle-display" aria-label="Changer mode d'affichage" title="Changer mode d'affichage">☰</button>
-      <button id="btn-settings" aria-label="Réglages" title="Réglages">⚙️</button>
+      <button id="btn-gps" data-i18n-label="gps" aria-label="Mettre à jour la position" title="Mettre à jour la position">📍</button>
+      <button id="btn-refresh" data-i18n-label="refresh" aria-label="Recharger les départs" title="Recharger les départs">↻</button>
+      <button id="btn-toggle-nearby" data-i18n-label="toggleNearby" aria-label="Basculer 1er/2e arrêt" title="Basculer 1er/2e arrêt">⇄</button>
+      <button id="btn-toggle-display" data-i18n-label="toggleDisplay" aria-label="Changer mode d'affichage" title="Changer mode d'affichage">☰</button>
+      <button id="btn-settings" data-i18n-label="settings" aria-label="Réglages" title="Réglages">⚙️</button>
     </span>
   </p>
 
-  <button id="fullscreen-toggle">Plein écran ↗️</button>
+  <button id="fullscreen-toggle" data-i18n="fullscreen">Plein écran ↗️</button>
 
   <div class="filter-container">
-    <button id="toggle-filter">Filtres de lignes</button>
+    <button id="toggle-filter" data-i18n="lineFilters">Filtres de lignes</button>
     <div id="line-filter-box" class="hidden"></div>
   </div>
 </div>
@@ -63,6 +63,6 @@
     });
   }
 </script>
-<script type="module" src="script.js?v=2026.09.27.15.56"></script>
+<script type="module" src="script.js?v=2026.09.28.04.51"></script>
 </body>
 </html>

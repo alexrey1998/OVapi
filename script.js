@@ -2,6 +2,7 @@
 // Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
+import { LANGUAGES, browserLanguage, setLanguage, t, applyStaticTexts } from "./i18n.js";
 function getInt(val, dflt) {
   const n = Number(val);
   return Number.isFinite(n) && n > 0 ? n : dflt;
@@ -24,7 +25,8 @@ function loadAppSettings() {
     refreshMs: REFRESH_CHOICES_MS.includes(REFRESH_MS) ? REFRESH_MS : 60000,
     showDelay: true,
     delayShowThresholdMin: 2,
-    delayRedThresholdMin: 5
+    delayRedThresholdMin: 5,
+    language: browserLanguage()
   };
   try {
     const raw = localStorage.getItem(APP_SETTINGS_KEY);
@@ -33,6 +35,7 @@ function loadAppSettings() {
       if (parsed && typeof parsed === "object") {
         const merged = { ...defaults, ...parsed };
         if (!REFRESH_CHOICES_MS.includes(merged.refreshMs)) merged.refreshMs = defaults.refreshMs;
+        if (!(merged.language in LANGUAGES)) merged.language = defaults.language;
         return merged;
       }
     }
@@ -104,6 +107,8 @@ function createLineBadge({ label, color }) {
   const badge = document.createElement("span");
   badge.className = "line-badge";
   badge.style.backgroundColor = color;
+  // Texte noir sur fond blanc (sinon le numéro serait invisible).
+  if (/^#?f{3}(f{3})?$/i.test(String(color).trim())) badge.style.color = "#000";
   badge.textContent = label;
   adjustLineBadgePadding(badge);
   return badge;
@@ -207,7 +212,8 @@ function setupModal({ box, toggleBtn, closeId, bodyClass }) {
       btn = document.createElement("button");
       btn.id = closeId;
       btn.type = "button";
-      btn.setAttribute("aria-label", "Fermer");
+      btn.dataset.i18nAria = "close";
+      btn.setAttribute("aria-label", t("close"));
       btn.textContent = "×";
       btn.addEventListener("click", close);
       box.prepend(btn);
@@ -232,7 +238,14 @@ function setupModal({ box, toggleBtn, closeId, bodyClass }) {
   return { ensureClose };
 }
 document.addEventListener("DOMContentLoaded", () => {
+  let appSettings = loadAppSettings();
+  setLanguage(appSettings.language);
+  applyStaticTexts();
   const stopNameEl = document.getElementById("stop-name");
+  if (stopNameEl) {
+    stopNameEl.dataset.placeholder = t("stopPlaceholder");
+    stopNameEl.textContent = t("stopPlaceholder");
+  }
   const suggestionsContainer = document.getElementById("stop-suggestions");
   const departuresContainer = document.getElementById("departures");
   const lastUpdateElement = document.getElementById("update-time");
@@ -245,14 +258,14 @@ document.addEventListener("DOMContentLoaded", () => {
   if (thermo) {
     thermo.innerHTML = `
       <div id="thermo-header">
-        <button id="thermo-back">← Retour</button>
+        <button id="thermo-back" data-i18n="back">${t("back")}</button>
         <div id="thermo-title"></div>
       </div>
       <div id="thermo-body"></div>
     `;
     thermo.querySelector("#thermo-back").addEventListener("click", () => closeThermometer());
   }
-  let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || "Entrez le nom de l'arrêt ici") : "Entrez le nom de l'arrêt ici";
+  let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || t("stopPlaceholder")) : t("stopPlaceholder");
   if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
   let currentSuggestionIndex = -1;
   let userLocation = null;
@@ -266,7 +279,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (suggestionsController && !suggestionsController.signal.aborted) suggestionsController.abort();
     suggestionsController = null;
   }
-  let appSettings = loadAppSettings();
   let refreshTimerId = null;
   function startRefreshTimer() {
     if (refreshTimerId) clearInterval(refreshTimerId);
@@ -311,7 +323,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!jumpBanner) return;
     const visible = jumpBackStop !== null && minDepartureMs !== null;
     jumpBanner.classList.toggle("hidden", !visible);
-    if (visible) jumpBanner.textContent = `← ${jumpBackStop} · départs après ${fmtHM(new Date(minDepartureMs))}`;
+    if (visible) jumpBanner.textContent = `← ${jumpBackStop} · ${t("departuresAfter")} ${fmtHM(new Date(minDepartureMs))}`;
   }
   // Affiche l'arrêt choisi et charge ses départs.
   function selectStop(name, jump = null) {
@@ -626,7 +638,7 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
   async function findAndFillBestStop() {
-    if (!userLocation || !autoFillAllowed || STOP_NAME !== "Entrez le nom de l'arrêt ici") {
+    if (!userLocation || !autoFillAllowed || STOP_NAME !== t("stopPlaceholder")) {
       return;
     }
     return new Promise((resolve) => {
@@ -638,7 +650,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (ok) { chosen = candidate; break; }
         }
         if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
-        if (chosen && autoFillAllowed && STOP_NAME === "Entrez le nom de l'arrêt ici") selectStop(chosen);
+        if (chosen && autoFillAllowed && STOP_NAME === t("stopPlaceholder")) selectStop(chosen);
         resolve(chosen);
       });
     });
@@ -713,10 +725,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function buildLineFilter(lines, departures) {
     filterBox.innerHTML = `
       <div id="select-all-container" style="display:flex;gap:12px;margin-bottom:10px;">
-        <button id="select-all" type="button" class="filter-toggle-btn" aria-label="Tout sélectionner">
+        <button id="select-all" type="button" class="filter-toggle-btn" data-i18n-aria="selectAll" aria-label="${t("selectAll")}">
           <input type="checkbox" checked disabled>
         </button>
-        <button id="deselect-all" type="button" class="filter-toggle-btn" aria-label="Tout désélectionner">
+        <button id="deselect-all" type="button" class="filter-toggle-btn" data-i18n-aria="deselectAll" aria-label="${t("deselectAll")}">
           <input type="checkbox" disabled>
         </button>
       </div>
@@ -833,7 +845,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       if (e.name === "AbortError") return;
       console.error("Erreur chargement départs", e);
-      departuresContainer.innerHTML = "<p>Erreur de chargement</p>";
+      departuresContainer.innerHTML = `<p>${t("loadError")}</p>`;
     } finally {
       if (currentFetchController === controller) currentFetchController = null;
     }
@@ -880,22 +892,33 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!settingsBox) return;
     settingsBox.innerHTML = `
       <div class="settings-section">
-        <h3>Rafraîchissement automatique</h3>
-        <label class="filter-item"><input type="radio" name="refresh-interval" value="30000"> 30 secondes</label>
-        <label class="filter-item"><input type="radio" name="refresh-interval" value="60000"> 1 minute</label>
+        <h3>${t("autoRefresh")}</h3>
+        <label class="filter-item"><input type="radio" name="refresh-interval" value="30000"> ${t("seconds30")}</label>
+        <label class="filter-item"><input type="radio" name="refresh-interval" value="60000"> ${t("minute1")}</label>
       </div>
       <div class="settings-section">
-        <h3>Avances / retards</h3>
-        <label class="filter-item"><input type="checkbox" id="setting-show-delay"> Afficher les avances/retards</label>
+        <h3>${t("delays")}</h3>
+        <label class="filter-item"><input type="checkbox" id="setting-show-delay"> ${t("showDelay")}</label>
         <label class="settings-field">
-          Afficher à partir de <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-show-threshold" class="inline-value-input" aria-label="Seuil d'affichage en minutes"> min
+          ${t("showFrom")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-show-threshold" class="inline-value-input" aria-label="${t("showThresholdLabel")}"> min
         </label>
         <label class="settings-field">
-          Afficher en rouge à partir de <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-red-threshold" class="inline-value-input" aria-label="Seuil du rouge en minutes"> min
+          ${t("redFrom")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-red-threshold" class="inline-value-input" aria-label="${t("redThresholdLabel")}"> min
         </label>
+      </div>
+      <div class="settings-section">
+        <h3>${t("language")}</h3>
+        ${Object.entries(LANGUAGES).map(([code, name]) =>
+          `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
+        ).join("")}
       </div>
     `;
     settingsModal.ensureClose();
+
+    settingsBox.querySelectorAll('input[name="language"]').forEach(r => {
+      r.checked = r.value === appSettings.language;
+      r.addEventListener("change", () => changeLanguage(r.value));
+    });
 
     settingsBox.querySelectorAll('input[name="refresh-interval"]').forEach(r => {
       r.checked = Number(r.value) === appSettings.refreshMs;
@@ -946,6 +969,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   renderSettingsBox();
+
+  // Changement de langue : textes de la page, menu réglages, bandeau de retour et départs affichés.
+  function changeLanguage(lang) {
+    const showingPlaceholder = STOP_NAME === t("stopPlaceholder");
+    appSettings.language = lang;
+    saveAppSettings(appSettings);
+    setLanguage(lang);
+    applyStaticTexts();
+    if (stopNameEl) {
+      stopNameEl.dataset.placeholder = t("stopPlaceholder");
+      if (showingPlaceholder) {
+        STOP_NAME = t("stopPlaceholder");
+        stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+      }
+    }
+    renderSettingsBox();
+    updateJumpBanner();
+    renderInBackground(lastDepartures);
+  }
 
   function isMobileDevice() {
     return window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -1113,7 +1155,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const list = document.createElement("div");
           list.className = "departure-times";
           list.innerHTML = times.slice(0, 5).map(o => {
-            const pl = o.platform ? ` pl. ${escapeHtml(o.platform)}` : "";
+            const pl = o.platform ? ` ${t("platform")} ${escapeHtml(o.platform)}` : "";
             return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}" data-train="${escapeHtml(o.trainName || '')}">${o.timeStr}${delayHTML(o.delay)} (${o.minutesLeft} min)${pl}</span>`;
           }).join("");
           card.appendChild(list);
@@ -1189,7 +1231,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (platform) {
         const platformSpan = document.createElement("span");
         platformSpan.className = "departure-platform";
-        platformSpan.textContent = `pl. ${platform}`;
+        platformSpan.textContent = `${t("platform")} ${platform}`;
         infoDiv.appendChild(platformSpan);
       }
 
@@ -1253,7 +1295,7 @@ document.addEventListener("DOMContentLoaded", () => {
       body.innerHTML = "";
 
       if (!passList || passList.length === 0) {
-        body.innerHTML = `<p>Données indisponibles pour cet itinéraire.</p>`;
+        body.innerHTML = `<p>${t("noData")}</p>`;
       } else {
         const nowMs = Date.now();
         passList.forEach(p => {
@@ -1319,7 +1361,7 @@ document.addEventListener("DOMContentLoaded", () => {
       fetchSuggestionsByLocation(cached.lon, cached.lat, () => {});
     }
 
-    if (STOP_NAME === "Entrez le nom de l'arrêt ici") {
+    if (STOP_NAME === t("stopPlaceholder")) {
       updateUserLocation(
         () => findAndFillBestStop(),
         {

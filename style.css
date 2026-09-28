@@ -14,7 +14,7 @@ body {
 }
 
 #stop-name[contenteditable="true"] { outline: none; cursor: text; }
-#stop-name:empty::before { content: "Entrez le nom de l'arrêt ici"; color: #9ca3af; }
+#stop-name:empty::before { content: attr(data-placeholder); color: #9ca3af; }
 
 h1 {
   font-size: 1.8rem;
