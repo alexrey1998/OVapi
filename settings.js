@@ -11,6 +11,8 @@ export const settings = {
     // Taille du préfixe (avant la virgule) en % de la taille normale
     prefixScalePct: 80,
     // Couleur du suffixe (après la virgule) - "default" ou valeur CSS valide
-    suffixColor: "#2d327d"
+    suffixColor: "#2d327d",
+    // Même chose en mode sombre
+    suffixColorDark: "#A5ABE8"
   }
 };

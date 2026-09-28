@@ -10,13 +10,25 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#007bff">
 <!-- Note pour les IA : à chaque modification du code, mettre à jour les deux ?v= (date-heure AAAA.MM.JJ.HH.MM) et CACHE_VERSION dans sw.js. -->
-<link rel="stylesheet" href="style.css?v=2026.09.28.04.51">
+<link rel="stylesheet" href="style.css?v=2026.09.28.05.13">
 
 <link rel="icon" type="image/svg+xml" href="icons/logo.svg">
 <link rel="icon" sizes="32x32" href="icons/icon-32.png">
 <link rel="icon" sizes="16x16" href="icons/icon-16.png">
 </head>
 <body>
+<script>
+  // Thème avant tout affichage (évite un flash clair) : mode en cache, sinon sombre. theme.js vérifie ensuite.
+  (function () {
+    var mode = "dark";
+    try {
+      var c = JSON.parse(localStorage.getItem("theme.v1"));
+      if (c && (c.mode === "light" || c.mode === "dark")) mode = c.mode;
+    } catch (e) {}
+    document.body.classList.add(mode + "-mode");
+    if (mode === "dark") document.querySelector('meta[name="theme-color"]').setAttribute("content", "#121417");
+  })();
+</script>
 
 <h1 id="stop-name" contenteditable="true" spellcheck="false" data-placeholder="Entrez le nom de l'arrêt ici">Entrez le nom de l'arrêt ici</h1>
 
@@ -63,6 +75,6 @@
     });
   }
 </script>
-<script type="module" src="script.js?v=2026.09.28.04.51"></script>
+<script type="module" src="script.js?v=2026.09.28.05.13"></script>
 </body>
 </html>

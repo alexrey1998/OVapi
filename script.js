@@ -3,6 +3,7 @@
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 import { LANGUAGES, browserLanguage, setLanguage, t, applyStaticTexts } from "./i18n.js";
+import { THEME_CHOICES, startTheme, setThemePreference } from "./theme.js";
 function getInt(val, dflt) {
   const n = Number(val);
   return Number.isFinite(n) && n > 0 ? n : dflt;
@@ -26,7 +27,8 @@ function loadAppSettings() {
     showDelay: true,
     delayShowThresholdMin: 2,
     delayRedThresholdMin: 5,
-    language: browserLanguage()
+    language: browserLanguage(),
+    theme: "auto"
   };
   try {
     const raw = localStorage.getItem(APP_SETTINGS_KEY);
@@ -36,6 +38,7 @@ function loadAppSettings() {
         const merged = { ...defaults, ...parsed };
         if (!REFRESH_CHOICES_MS.includes(merged.refreshMs)) merged.refreshMs = defaults.refreshMs;
         if (!(merged.language in LANGUAGES)) merged.language = defaults.language;
+        if (!THEME_CHOICES.includes(merged.theme)) merged.theme = defaults.theme;
         return merged;
       }
     }
@@ -68,9 +71,13 @@ function escapeHtml(s) {
 }
 function formatStopNameHTML(rawName) {
   const name = String(rawName ?? "");
-  const color = (settings?.stopName?.suffixColor ?? "default").toString();
   const scale = getInt(settings?.stopName?.prefixScalePct, 100);
-  const colorStyle = (color && color.toLowerCase() !== "default") ? `color:${escapeHtml(color)};` : "";
+  // Couleurs clair/sombre en variables CSS, appliquées par .stopname-suffix (style.css).
+  const colorVar = (cssVar, value) => {
+    const c = (value ?? "default").toString();
+    return (c && c.toLowerCase() !== "default") ? `${cssVar}:${escapeHtml(c)};` : "";
+  };
+  const colorStyle = colorVar("--suffix-light", settings?.stopName?.suffixColor) + colorVar("--suffix-dark", settings?.stopName?.suffixColorDark);
   const m = name.match(/^(.*?,)([\u00A0\u202F ]*)(.*)$/);
   if (m) {
     const prefix = m[1] + m[2];
@@ -239,6 +246,7 @@ function setupModal({ box, toggleBtn, closeId, bodyClass }) {
 }
 document.addEventListener("DOMContentLoaded", () => {
   let appSettings = loadAppSettings();
+  startTheme(appSettings.theme);
   setLanguage(appSettings.language);
   applyStaticTexts();
   const stopNameEl = document.getElementById("stop-name");
@@ -907,6 +915,12 @@ document.addEventListener("DOMContentLoaded", () => {
         </label>
       </div>
       <div class="settings-section">
+        <h3>${t("theme")}</h3>
+        ${THEME_CHOICES.map(choice =>
+          `<label class="filter-item"><input type="radio" name="theme" value="${choice}"> ${t("theme_" + choice)}</label>`
+        ).join("")}
+      </div>
+      <div class="settings-section">
         <h3>${t("language")}</h3>
         ${Object.entries(LANGUAGES).map(([code, name]) =>
           `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
@@ -914,6 +928,15 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
     `;
     settingsModal.ensureClose();
+
+    settingsBox.querySelectorAll('input[name="theme"]').forEach(r => {
+      r.checked = r.value === appSettings.theme;
+      r.addEventListener("change", () => {
+        appSettings.theme = r.value;
+        saveAppSettings(appSettings);
+        setThemePreference(r.value);
+      });
+    });
 
     settingsBox.querySelectorAll('input[name="language"]').forEach(r => {
       r.checked = r.value === appSettings.language;
