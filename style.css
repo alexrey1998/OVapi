@@ -35,6 +35,7 @@
   --close-text: #888;
   --close-hover: #555;
   --input-underline: #bbb;
+  --fineprint: #6B7280;
 }
 body.dark-mode {
   color-scheme: dark;
@@ -68,6 +69,7 @@ body.dark-mode {
   --close-text: #A0A6AE;
   --close-hover: #E6E8EB;
   --input-underline: #5A616B;
+  --fineprint: #9AA1AA;
 }
 * {
   margin: 0;
@@ -297,7 +299,8 @@ h1 {
 }
 
 .departure-card .late,
-.departure-item .late {
+.departure-item .late,
+.thermo-time .late {
   color: var(--late);
 }
 
@@ -484,6 +487,17 @@ body.settings-open::before {
   font-size: 1rem;
   margin-bottom: 8px;
 }
+.settings-footer {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--fineprint);
+}
+.settings-footer details { margin-top: 8px; }
+.settings-footer summary { cursor: pointer; }
+.settings-footer details p { margin-top: 4px; }
 .settings-field {
   display: flex;
   align-items: center;

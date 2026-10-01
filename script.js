@@ -25,8 +25,8 @@ function loadAppSettings() {
   const defaults = {
     refreshMs: REFRESH_CHOICES_MS.includes(REFRESH_MS) ? REFRESH_MS : 60000,
     showDelay: true,
-    delayShowThresholdMin: 2,
-    delayRedThresholdMin: 5,
+    delayShowThresholdMin: 1,
+    delayRedThresholdMin: 3,
     language: browserLanguage(),
     theme: "auto"
   };
@@ -146,8 +146,13 @@ function operatorColor(operator, number) {
   if (!palette) return "";
   return palette[number] || palette[number.match(/^\d+/)?.[0]] || palette.default;
 }
+// Clé de ligne « catégorie numéro ». Hors bus/tram/métro, un numéro qui commence par 0 est un numéro de train
+// (TGV, EC, TER… sans numéro de ligne) : ces départs sont regroupés sous la seule catégorie, comme leur badge.
 function lineKeyOf(dep) {
-  return `${dep.category || ""} ${dep.number || ""}`;
+  const category = dep.category || "";
+  const number = dep.number || "";
+  const isTrainNumber = !["B", "T", "M"].includes(category) && number.startsWith("0");
+  return `${category} ${isTrainNumber ? "" : number}`;
 }
 // Tri des lignes : numéros qui commencent par des chiffres d'abord (par valeur), puis ordre alphabétique.
 function compareLineKeys(a, b) {
@@ -160,7 +165,7 @@ function compareLineKeys(a, b) {
   if (isNumA && isNumB) return pureNumA !== pureNumB ? pureNumA - pureNumB : numA.localeCompare(numB);
   if (isNumA) return -1;
   if (isNumB) return 1;
-  return numA.localeCompare(numB);
+  return numA.localeCompare(numB) || a.localeCompare(b);
 }
 function withDelay(ms, delayMin) {
   return ms + (Number.isFinite(delayMin) ? delayMin * 60000 : 0);
@@ -926,6 +931,13 @@ document.addEventListener("DOMContentLoaded", () => {
           `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
         ).join("")}
       </div>
+      <div class="settings-footer">
+        <p>${t("legalNotice")}</p>
+        <details>
+          <summary>${t("privacyTitle")}</summary>
+          <p>${t("privacyText")}</p>
+        </details>
+      </div>
     `;
     settingsModal.ensureClose();
 
@@ -1334,9 +1346,9 @@ document.addEventListener("DOMContentLoaded", () => {
           const tdiv = document.createElement("div");
           tdiv.className = "thermo-time";
           if (t) {
-            const delayTxt = (delay && Math.abs(delay) >= 2) ? ` ${delay>0?"+":"-"}${Math.abs(delay)}'` : "";
+            // Avances/retards selon les réglages, comme sur les cartes de départ.
             const minTxt = minutesLeft !== null ? ` (${minutesLeft} min)` : "";
-            tdiv.textContent = `${fmtHM(t)}${delayTxt}${minTxt}`;
+            tdiv.innerHTML = `${fmtHM(t)}${delayHTML(delay)}${minTxt}`;
           } else {
             tdiv.textContent = "—";
           }
