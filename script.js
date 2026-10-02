@@ -158,8 +158,10 @@ function getLineBadge(category, number, operator) {
     return { label: withNumber("Funi"), ...badgeColors(operatorColor(operator, number), categories.default) };
   }
   if (category === "BAT") {
-    // Boats: operator palette (e.g. MGsa), otherwise lineColors.BAT.
-    return { label: withNumber("BAT"), ...badgeColors(operatorColor(operator, number), lineColors.BAT || categories.default) };
+    // Boats with their own palette entry (e.g. MGsa M1) show the line only; the others "BAT …" in lineColors.BAT.
+    const entry = operatorColor(operator, number);
+    if (entry && number) return { label: number, ...badgeColors(entry) };
+    return { label: withNumber("BAT"), ...badgeColors(entry, lineColors.BAT || categories.default) };
   }
   if (category === "GB") return { label: "🚠", color: categories.GB };
   const label = withNumber(category);
