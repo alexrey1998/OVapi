@@ -148,22 +148,19 @@ export const lineColors = {
   },
   
   TPN: {
-    "803": "#E53E3E",
-    "804": "#38A169", 
-    "805": "#DD6B20",
-    "810": "#B794F6",
-    "811": "#805AD5",
-    "813": "#F687B3",
-    "814": "#2B6CB0",
-    "815": "#C53030",
-    "818": "#8B4513",
-    "891": "#ECC94B"
+    "810": { background: "#C693C2", text: "#FFFFFF" },
+    "811": { background: "#96358C", text: "#FFFFFF" },
+    "813": { background: "#F39DA9", text: "#FFFFFF" },
+    "814": { background: "#00437A", text: "#FFFFFF" },
+    "815": { background: "#AD222B", text: "#FFFFFF" },
+    "818": { background: "#85431E", text: "#FFFFFF" },
+    "891": { background: "#FFE52C", text: "#545451" }
   },
 
   BNP: {
-    "803": "#E53E3E",
-    "804": "#38A169", 
-    "805": "#DD6B20",
+    "803": { background: "#E63023", text: "#FFFFFF" },
+    "804": { background: "#009640", text: "#FFFFFF" },
+    "805": { background: "#F07D00", text: "#FFFFFF" }
   },
   
   "MBC-cg": {
@@ -930,5 +927,38 @@ export const lineColors = {
     "993": "#E30052",
     "994": "#E30052",
     "996": "#E30052"
+  },
+
+  "TPC Auto": {
+    "61": { background: "#B0BB00", text: "#FFFFFF" },
+    "63": { background: "#6CABD0", text: "#FFFFFF" },
+    "81": { background: "#084987", text: "#FFFFFF" },
+    "101": { background: "#008266", text: "#FFFFFF" },
+    "102": { background: "#D51317", text: "#FFFFFF" },
+    "103": { background: "#AB8248", text: "#FFFFFF" },
+    "104": { background: "#CC6778", text: "#FFFFFF" },
+    "105": { background: "#084987", text: "#FFFFFF" },
+    "106": { background: "#824A7A", text: "#FFFFFF" },
+    "107": { background: "#824A7A", text: "#FFFFFF" },
+    "108": { background: "#C7135D", text: "#FFFFFF" },
+    "109": { background: "#008266", text: "#FFFFFF" },
+    "110": { background: "#AB8248", text: "#FFFFFF" },
+    "111": { background: "#084987", text: "#FFFFFF" },
+    "112": { background: "#CC6778", text: "#FFFFFF" },
+    "114": { background: "#559398", text: "#FFFFFF" },
+    "115": { background: "#CC6778", text: "#FFFFFF" },
+    "116": { background: "#559398", text: "#FFFFFF" },
+    "119": { background: "#6CABD0", text: "#FFFFFF" },
+    "143": { background: "#6CABD0", text: "#FFFFFF" },
+    "144": { background: "#AEBD14", text: "#FFFFFF" },
+    "145": { background: "#AB8248", text: "#FFFFFF" },
+    "152": { background: "#008266", text: "#FFFFFF" },
+    "161": { background: "#C7135D", text: "#FFFFFF" },
+    "162": { background: "#084987", text: "#FFFFFF" },
+    "163": { background: "#824A7A", text: "#FFFFFF" },
+    "164": { background: "#6CABD0", text: "#FFFFFF" },
+    "165": { background: "#559398", text: "#FFFFFF" },
+    "172": { background: "#008266", text: "#FFFFFF" },
+    "175": { background: "#CC6778", text: "#FFFFFF" }
   }
 };
