@@ -128,17 +128,22 @@ function relativeLuminance(hex) {
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-// White text stays unless its contrast drops below 1.4:1 (very light backgrounds only); black text otherwise.
+// Used only when no official text color is known: white text stays unless its contrast drops below 1.4:1.
 function badgeTextColor(background) {
   const l = relativeLuminance(background);
   return l !== null && 1.05 / (l + 0.05) < 1.4 ? "#000" : "";
 }
-function createLineBadge({ label, color }) {
+// Palette entries are either "#RRGGBB" (background only) or { background, text } (official colors).
+function badgeColors(entry, fallback) {
+  if (entry && typeof entry === "object") return { color: entry.background, textColor: entry.text || "" };
+  return { color: entry || fallback, textColor: "" };
+}
+function createLineBadge({ label, color, textColor }) {
   const badge = document.createElement("span");
   badge.className = "line-badge";
   badge.style.backgroundColor = color;
-  const textColor = badgeTextColor(color);
-  if (textColor) badge.style.color = textColor;
+  const text = textColor || badgeTextColor(color);
+  if (text) badge.style.color = text;
   badge.textContent = label;
   adjustLineBadgePadding(badge);
   return badge;
@@ -147,14 +152,14 @@ function getLineBadge(category, number, operator) {
   const { categories } = lineColors;
   const withNumber = (prefix) => (number && !number.startsWith("0") ? `${prefix} ${number}` : prefix);
   if (category === "B" || category === "T" || category === "M") {
-    return { label: number || category, color: operatorColor(operator, number) || categories.default };
+    return { label: number || category, ...badgeColors(operatorColor(operator, number), categories.default) };
   }
   if (category === "FUN") {
-    return { label: withNumber("Funi"), color: operatorColor(operator, number) || categories.default };
+    return { label: withNumber("Funi"), ...badgeColors(operatorColor(operator, number), categories.default) };
   }
   if (category === "BAT") {
-    // lineColors.BAT is not read yet: boat colors should be looked up here.
-    return { label: withNumber("BAT"), color: categories.default };
+    // Boats: operator palette (e.g. MGsa), otherwise lineColors.BAT.
+    return { label: withNumber("BAT"), ...badgeColors(operatorColor(operator, number), lineColors.BAT || categories.default) };
   }
   if (category === "GB") return { label: "🚠", color: categories.GB };
   const label = withNumber(category);
