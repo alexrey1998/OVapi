@@ -1,5 +1,4 @@
-// script.js
-// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
+// Any code change requires updating the version number (see sw.js).
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 import { LANGUAGES, browserLanguage, setLanguage, t, applyStaticTexts } from "./i18n.js";
@@ -28,7 +27,8 @@ function loadAppSettings() {
     delayShowThresholdMin: 1,
     delayRedThresholdMin: 3,
     language: browserLanguage(),
-    theme: "auto"
+    theme: "auto",
+    keepScreenOn: false
   };
   try {
     const raw = localStorage.getItem(APP_SETTINGS_KEY);
@@ -52,10 +52,18 @@ let swissStationsSet = new Set();
 let stationDeparturesCache = {};
 const STATION_CACHE_TTL_MS = 5 * 60 * 1000;
 let trainPassListCache = {};
-// "numéro de train|destination brute" → destination vérifiée, pour ne pas revérifier un même train.
+// "trainNumber|rawDestination" → verified destination, so the same train is not checked twice.
 const verifiedDestinations = new Map();
+async function fetchJSON(url, options) {
+  const r = await fetch(url, options);
+  if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`);
+  return r.json();
+}
 fetch("swiss_stations.csv")
-  .then(r => r.text())
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  })
   .then(txt => {
     txt.split("\n").forEach(line => {
       const v = line.trim();
@@ -72,7 +80,7 @@ function escapeHtml(s) {
 function formatStopNameHTML(rawName) {
   const name = String(rawName ?? "");
   const scale = getInt(settings?.stopName?.prefixScalePct, 100);
-  // Couleurs clair/sombre en variables CSS, appliquées par .stopname-suffix (style.css).
+  // Light/dark colors passed as CSS variables, applied by .stopname-suffix (style.css).
   const colorVar = (cssVar, value) => {
     const c = (value ?? "default").toString();
     return (c && c.toLowerCase() !== "default") ? `${cssVar}:${escapeHtml(c)};` : "";
@@ -97,7 +105,7 @@ function computeDistance(lat1, lon1, lat2, lon2) {
     Math.sin(dLon/2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-// ≈ police de .line-badge (style.css), en dur car le badge est mesuré avant d'être dans la page.
+// ≈ .line-badge font (style.css), hard-coded because badges are measured before being added to the page.
 const badgeCtx = document.createElement("canvas").getContext("2d");
 badgeCtx.font = "700 22px Arial";
 function adjustLineBadgePadding(el) {
@@ -110,17 +118,31 @@ function adjustLineBadgePadding(el) {
   el.style.paddingLeft = pad + "px";
   el.style.paddingRight = pad + "px";
 }
+function relativeLuminance(hex) {
+  let h = String(hex).trim().replace(/^#/, "");
+  if (/^[0-9a-f]{3}$/i.test(h)) h = h.replace(/./g, c => c + c);
+  if (!/^[0-9a-f]{6}$/i.test(h)) return null;
+  const [r, g, b] = [0, 2, 4].map(i => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+// White text stays unless its contrast drops below 1.4:1 (very light backgrounds only); black text otherwise.
+function badgeTextColor(background) {
+  const l = relativeLuminance(background);
+  return l !== null && 1.05 / (l + 0.05) < 1.4 ? "#000" : "";
+}
 function createLineBadge({ label, color }) {
   const badge = document.createElement("span");
   badge.className = "line-badge";
   badge.style.backgroundColor = color;
-  // Texte noir sur fond blanc (sinon le numéro serait invisible).
-  if (/^#?f{3}(f{3})?$/i.test(String(color).trim())) badge.style.color = "#000";
+  const textColor = badgeTextColor(color);
+  if (textColor) badge.style.color = textColor;
   badge.textContent = label;
   adjustLineBadgePadding(badge);
   return badge;
 }
-// Libellé et couleur du badge d'une ligne.
 function getLineBadge(category, number, operator) {
   const { categories } = lineColors;
   const withNumber = (prefix) => (number && !number.startsWith("0") ? `${prefix} ${number}` : prefix);
@@ -131,30 +153,30 @@ function getLineBadge(category, number, operator) {
     return { label: withNumber("Funi"), color: operatorColor(operator, number) || categories.default };
   }
   if (category === "BAT") {
-    // lineColors.BAT n'est pas encore lu : pour colorer les bateaux, c'est ici qu'il faudra le lire.
+    // lineColors.BAT is not read yet: boat colors should be looked up here.
     return { label: withNumber("BAT"), color: categories.default };
   }
   if (category === "GB") return { label: "🚠", color: categories.GB };
   const label = withNumber(category);
   if (categories.trains.includes(category)) return { label, color: categories.trainsColor };
-  // lineColors[label] : point d'extension pour des couleurs par libellé.
+  // lineColors[label]: extension point for colors by label.
   return { label, color: lineColors[label] || categories.trainsColor };
 }
-// Couleur dans la palette de l'opérateur : numéro exact, sinon partie numérique, sinon "default".
+// Operator palette lookup: exact number, then its numeric part, then "default".
 function operatorColor(operator, number) {
   const palette = operator && lineColors[operator];
   if (!palette) return "";
   return palette[number] || palette[number.match(/^\d+/)?.[0]] || palette.default;
 }
-// Clé de ligne « catégorie numéro ». Hors bus/tram/métro, un numéro qui commence par 0 est un numéro de train
-// (TGV, EC, TER… sans numéro de ligne) : ces départs sont regroupés sous la seule catégorie, comme leur badge.
+// Line key "category number". Outside bus/tram/metro, a number starting with 0 is a train number
+// (TGV, EC, TER… without a line number): such departures are grouped by category, like their badge.
 function lineKeyOf(dep) {
   const category = dep.category || "";
   const number = dep.number || "";
   const isTrainNumber = !["B", "T", "M"].includes(category) && number.startsWith("0");
   return `${category} ${isTrainNumber ? "" : number}`;
 }
-// Tri des lignes : numéros qui commencent par des chiffres d'abord (par valeur), puis ordre alphabétique.
+// Numeric line numbers first (by value), then alphabetical.
 function compareLineKeys(a, b) {
   const numA = a.split(" ").pop();
   const numB = b.split(" ").pop();
@@ -173,7 +195,17 @@ function withDelay(ms, delayMin) {
 function minutesUntil(ms, nowMs) {
   return Math.max(0, Math.round((ms - nowMs) / 60000));
 }
-// Départ du tableau prêt à afficher, ou null s'il sort de la période d'affichage.
+// Platform change: either a forecast platform differing from the planned one, or a platform marked "12!" by the API.
+function platformInfo(dep) {
+  const clean = p => (p && p !== "null" ? String(p) : "");
+  if (dep.category === "GB") return { platform: "", plannedPlatform: "", platformChanged: false };
+  const planned = clean(dep.stop?.platform);
+  const forecast = clean(dep.stop?.prognosis?.platform);
+  if (forecast && planned && forecast !== planned) return { platform: forecast, plannedPlatform: planned.replace(/!$/, ""), platformChanged: true };
+  if (planned.endsWith("!")) return { platform: planned.slice(0, -1), plannedPlatform: "", platformChanged: true };
+  return { platform: planned || forecast, plannedPlatform: "", platformChanged: false };
+}
+// Returns null when the departure is outside the display window.
 function toDepartureInfo(dep, nowMs) {
   const schedMs = new Date(dep.stop?.departure).getTime();
   const effMs = Number.isFinite(schedMs) ? withDelay(schedMs, Number(dep.stop?.delay || 0)) : NaN;
@@ -183,16 +215,22 @@ function toDepartureInfo(dep, nowMs) {
     effMs,
     minutesLeft: minutesUntil(effMs, nowMs),
     timeStr: fmtHM(new Date(schedMs)),
-    platform: (dep.stop?.platform && dep.category !== "GB" && dep.stop.platform !== "null") ? dep.stop.platform : "",
+    ...platformInfo(dep),
+    trainName: dep.name || "",
     delay: dep.stop?.delay ?? null
   };
 }
-// Première correspondance entre deux arrêts, aujourd'hui à partir de hhmm.
+function platformHTML(info) {
+  if (!info.platform) return "";
+  if (!info.platformChanged) return `${t("platform")} ${escapeHtml(info.platform)}`;
+  const old = info.plannedPlatform ? `<s class="platform-old">${escapeHtml(info.plannedPlatform)}</s> ` : "";
+  return `${t("platform")} ${old}<span class="platform-new">${escapeHtml(info.platform)}</span>`;
+}
 async function fetchFirstConnection(from, to, hhmm) {
   const now = new Date();
   const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
   const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
-  const data = await fetch(url).then(r => r.json());
+  const data = await fetchJSON(url);
   return (data.connections || [])[0];
 }
 function hasComma(stopName) {
@@ -209,13 +247,19 @@ function saveDisplayMode(stopName, mode) {
   const key = hasComma(stopName) ? 'displayMode-withComma' : 'displayMode-noComma';
   localStorage.setItem(key, mode);
 }
-// Fenêtre Filtres ou Réglages : ouverture, fermeture, bouton ×, clic à l'extérieur et Échap.
-function setupModal({ box, toggleBtn, closeId, bodyClass }) {
+// Filters/Settings modal: toggle button, × button, outside click and Escape close it.
+// Opening adds a history entry (state.view) so the phone's Back button closes the modal.
+const MODAL_VIEWS = ["settings", "filters"];
+function setupModal({ box, toggleBtn, closeId, bodyClass, view }) {
   const isOpen = () => document.body.classList.contains(bodyClass);
   function close() {
     document.body.classList.remove(bodyClass);
     box.classList.remove("modal-open");
     box.classList.add("hidden");
+  }
+  function requestClose() {
+    if (history.state?.view === view) history.back();
+    else close();
   }
   function ensureClose() {
     let btn = document.getElementById(closeId);
@@ -227,7 +271,7 @@ function setupModal({ box, toggleBtn, closeId, bodyClass }) {
       btn.dataset.i18nAria = "close";
       btn.setAttribute("aria-label", t("close"));
       btn.textContent = "×";
-      btn.addEventListener("click", close);
+      btn.addEventListener("click", requestClose);
       box.prepend(btn);
     }
   }
@@ -236,18 +280,22 @@ function setupModal({ box, toggleBtn, closeId, bodyClass }) {
     box.classList.remove("hidden");
     box.classList.add("modal-open");
     document.body.classList.add(bodyClass);
+    // Replacing (not stacking) when switching directly from the other modal keeps one entry per open modal.
+    const entry = { ...(history.state || {}), view };
+    if (MODAL_VIEWS.includes(history.state?.view)) history.replaceState(entry, "");
+    else history.pushState(entry, "");
   }
   toggleBtn?.addEventListener("click", () => {
-    if (isOpen()) close();
+    if (isOpen()) requestClose();
     else open();
   });
   document.addEventListener("click", (e) => {
-    if (isOpen() && !box.contains(e.target) && !toggleBtn?.contains(e.target)) close();
+    if (isOpen() && !box.contains(e.target) && !toggleBtn?.contains(e.target)) requestClose();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isOpen()) close();
+    if (e.key === "Escape" && isOpen()) requestClose();
   });
-  return { ensureClose };
+  return { ensureClose, close };
 }
 document.addEventListener("DOMContentLoaded", () => {
   let appSettings = loadAppSettings();
@@ -276,7 +324,32 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
       <div id="thermo-body"></div>
     `;
-    thermo.querySelector("#thermo-back").addEventListener("click", () => closeThermometer());
+    thermo.querySelector("#thermo-back").addEventListener("click", () => {
+      if (history.state?.view === "thermo") history.back();
+      else closeThermometer();
+    });
+  }
+  // Status banner (no network, location errors…). One message per source; a source only clears its own message.
+  const statusBanner = document.getElementById("status-banner");
+  let currentStatus = null;
+  function renderStatus() {
+    if (!statusBanner) return;
+    statusBanner.classList.toggle("hidden", !currentStatus);
+    if (!currentStatus) return;
+    const { key, time } = currentStatus;
+    statusBanner.textContent = t(key) + (time ? " " + t("dataFrom", { time }) : "");
+  }
+  function showStatus(source, key, time = null) {
+    currentStatus = { source, key, time };
+    renderStatus();
+  }
+  function clearStatus(source) {
+    if (currentStatus?.source !== source) return;
+    currentStatus = null;
+    renderStatus();
+  }
+  function networkErrorKey(e) {
+    return navigator.onLine === false || e instanceof TypeError ? "offline" : "apiError";
   }
   let STOP_NAME = stopNameEl ? (stopNameEl.textContent?.trim() || t("stopPlaceholder")) : t("stopPlaceholder");
   if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
@@ -324,10 +397,9 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch { return null; }
   }
   let nearbyStops = [];
-  // Arrivée depuis un thermomètre : départs masqués avant minDepartureMs, bandeau de retour vers jumpBackStop.
+  // Coming from a thermometer: departures before minDepartureMs are hidden, the banner leads back to jumpBackStop.
   let minDepartureMs = null;
   let jumpBackStop = null;
-  let lastThermoArgs = null;
   const jumpBanner = document.getElementById("jump-back");
   function isAfterMinDeparture(info) {
     return minDepartureMs === null || info.effMs >= minDepartureMs;
@@ -338,8 +410,12 @@ document.addEventListener("DOMContentLoaded", () => {
     jumpBanner.classList.toggle("hidden", !visible);
     if (visible) jumpBanner.textContent = `← ${jumpBackStop} · ${t("departuresAfter")} ${fmtHM(new Date(minDepartureMs))}`;
   }
-  // Affiche l'arrêt choisi et charge ses départs.
-  function selectStop(name, jump = null) {
+  // History entries: { tp: displayed stop, view: "thermo" | "settings" | "filters", thermoArgs }.
+  // Stop changes outside history navigation update the current entry, so going back never restores a stale stop.
+  function currentTp() {
+    return { stop: STOP_NAME, minMs: minDepartureMs, backStop: jumpBackStop };
+  }
+  function selectStop(name, jump = null, fromHistory = false) {
     STOP_NAME = name;
     if (stopNameEl) stopNameEl.innerHTML = formatStopNameHTML(name);
     selectedLines.clear();
@@ -348,9 +424,14 @@ document.addEventListener("DOMContentLoaded", () => {
     minDepartureMs = jump ? jump.minMs : null;
     jumpBackStop = jump ? jump.backStop : null;
     updateJumpBanner();
+    clearStatus("geo");
     displayMode = loadDisplayMode(name);
     updateDisplayButtonIcon();
+    if (!fromHistory) history.replaceState({ tp: currentTp() }, "");
     fetchDepartures();
+  }
+  function isThermoOpen() {
+    return !!thermo && thermo.style.display === "block";
   }
   function closeThermometer() {
     if (!thermo) return;
@@ -358,23 +439,29 @@ document.addEventListener("DOMContentLoaded", () => {
     thermo.style.display = "none";
     departuresContainer.style.display = "";
   }
-  // Clic sur un arrêt du thermomètre : l'état courant est gardé dans l'historique pour pouvoir y revenir.
+  // Clicking a thermometer stop: a new history entry, so Back returns to the thermometer.
   function jumpToStop(name, arrivalMs) {
-    history.replaceState({ tp: { stop: STOP_NAME, minMs: minDepartureMs, backStop: jumpBackStop, thermo: lastThermoArgs } }, "");
-    const next = { stop: name, minMs: arrivalMs, backStop: STOP_NAME, thermo: null };
+    const next = { stop: name, minMs: arrivalMs, backStop: STOP_NAME };
     history.pushState({ tp: next }, "");
     closeThermometer();
-    selectStop(name, next);
+    selectStop(name, next, true);
   }
   window.addEventListener("popstate", (e) => {
-    const s = e.state?.tp;
-    if (!s) return;
-    closeThermometer();
-    selectStop(s.stop, s.minMs !== null && s.backStop !== null ? s : null);
-    if (s.thermo) showThermometer(...s.thermo);
+    const state = e.state || {};
+    if (state.view !== "settings") settingsModal.close();
+    if (state.view !== "filters") filterModal.close();
+    const s = state.tp;
+    if (s && (s.stop !== STOP_NAME || s.minMs !== minDepartureMs || s.backStop !== jumpBackStop)) {
+      closeThermometer();
+      selectStop(s.stop, s.minMs !== null && s.backStop !== null ? s : null, true);
+    }
+    if (state.view === "thermo" && state.thermoArgs) {
+      if (!isThermoOpen()) showThermometer(...state.thermoArgs, false);
+    } else if (state.view !== "settings" && state.view !== "filters") {
+      closeThermometer();
+    }
   });
   jumpBanner?.addEventListener("click", () => history.back());
-  // Choix dans la liste de suggestions (clic ou Entrée) : ferme aussi la liste et sort du titre.
   function chooseSuggestion(name) {
     abortPendingSuggestions();
     hideSuggestions();
@@ -386,10 +473,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-gps")?.addEventListener("click", () => {
     updateUserLocation(() => {
       if (!userLocation) return;
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, () => {
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, (ok) => {
         if (nearbyStops.length > 0) selectStop(nearbyStops[0].name);
+        else if (ok) showStatus("geo", "noNearbyStop");
       });
-    }, true);
+    }, { fresh: true, report: true });
   });
 
   document.getElementById("btn-toggle-nearby")?.addEventListener("click", () => {
@@ -459,14 +547,22 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
           stopNameEl.blur();
         }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        abortPendingSuggestions();
+        hideSuggestions();
+        stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+        stopNameEl.blur();
       }
     });
 
+    // Leaving the title: empty → the current stop name comes back; same name → nothing to reload.
     stopNameEl.addEventListener("blur", function() {
       abortPendingSuggestions();
       blurTimer = setTimeout(hideSuggestions, 200);
       const val = this.textContent.trim();
-      if (val) selectStop(val);
+      if (!val) stopNameEl.innerHTML = formatStopNameHTML(STOP_NAME);
+      else if (val !== STOP_NAME) selectStop(val);
     });
   }
 
@@ -510,11 +606,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function hasValidCoord(s) {
     return s && s.coordinate && Number.isFinite(s.coordinate.y) && Number.isFinite(s.coordinate.x);
   }
+  // The callback receives true when the request succeeded (even with no stop found).
   function fetchSuggestionsByLocation(lon, lat, callback) {
     const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
-    fetch(url)
-      .then(r => r.json())
+    fetchJSON(url)
       .then(data => {
+        clearStatus("network");
         const list = Array.isArray(data.stations) ? data.stations : [];
         const enriched = list
           .filter(s => hasValidCoord(s) || Number.isFinite(s.distance))
@@ -527,12 +624,13 @@ document.addEventListener("DOMContentLoaded", () => {
           .sort((a, b) => a.d - b.d);
 
         nearbyStops = enriched.filter(e => e.id && (!e.type || e.type === "station"));
-        if (typeof callback === "function") callback();
+        if (typeof callback === "function") callback(true);
       })
       .catch(err => {
         console.error("Erreur suggestions géoloc", err);
+        showStatus("network", networkErrorKey(err));
         nearbyStops = [];
-        if (typeof callback === "function") callback();
+        if (typeof callback === "function") callback(false);
       });
   }
 
@@ -543,9 +641,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const signal = controller.signal;
     const isStillRelevant = () => document.activeElement === stopNameEl && stopNameEl.textContent.trim() === query;
     const url = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(query)}&type=station`;
-    fetch(url, { signal })
-      .then(r => r.json())
+    fetchJSON(url, { signal })
       .then(data => {
+        clearStatus("network");
         if (!isStillRelevant()) return;
         const stations = (data.stations || [])
           .filter(s => s.id)
@@ -555,10 +653,17 @@ document.addEventListener("DOMContentLoaded", () => {
       .catch(err => {
         if (err.name === "AbortError") return;
         console.error("Erreur suggestions", err);
+        showStatus("network", networkErrorKey(err));
       });
   }
+  // opts.report: show location errors in the status banner (start-up and GPS button only).
   function updateUserLocation(cb, opts = false) {
-    if (!navigator.geolocation) { if (cb) cb(); return; }
+    const report = !!(opts && typeof opts === "object" && opts.report);
+    if (!navigator.geolocation) {
+      if (report) showStatus("geo", "geoUnsupported");
+      if (cb) cb();
+      return;
+    }
 
     let fresh = false, withWatch = false, quickCallback = null, finalCallback = null;
     if (typeof opts === "boolean") {
@@ -596,6 +701,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     navigator.geolocation.getCurrentPosition(
       pos => {
+        clearStatus("geo");
         userLocation = {
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
@@ -643,9 +749,10 @@ document.addEventListener("DOMContentLoaded", () => {
           { enableHighAccuracy: true, maximumAge: 0 }
         );
       },
-      _err => { 
+      err => {
         clearTimeout(quickTimer);
-        finalize(); 
+        if (report && !userLocation) showStatus("geo", err?.code === 1 ? "geoDenied" : "geoUnavailable");
+        finalize();
       },
       { enableHighAccuracy: true, maximumAge: fresh ? 0 : 15000, timeout: 8000 }
     );
@@ -655,7 +762,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     return new Promise((resolve) => {
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async () => {
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async (ok) => {
+        if (ok && nearbyStops.length === 0) showStatus("geo", "noNearbyStop");
         let chosen = null;
         for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
           const candidate = nearbyStops[i].name;
@@ -668,7 +776,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
-  // Destination finale du train, ou null si elle n'a pas pu être déterminée.
+  // Final destination of the train, or null if it could not be determined.
   async function adjustTrainDestination(dep, signal) {
     try {
       const stationKey = dep.to;
@@ -676,13 +784,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const cached = stationDeparturesCache[stationKey];
       if (!cached || Date.now() - cached.fetchedAt > STATION_CACHE_TTL_MS) {
         const locURL = `https://transport.opendata.ch/v1/locations?query=${encodeURIComponent(dep.to)}`;
-        const locData = await fetch(locURL, { signal }).then(r => r.json());
+        const locData = await fetchJSON(locURL, { signal });
         const station = locData.stations && locData.stations[0];
         if (!station) return null;
 
         const stationId = station.id;
         const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationId)}`;
-        const data = await fetch(url, { signal }).then(r => r.json());
+        const data = await fetchJSON(url, { signal });
         stationDeparturesCache[stationKey] = { fetchedAt: Date.now(), board: data.stationboard || [] };
       }
 
@@ -697,7 +805,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!trainPassListCache[currentName]) {
               try {
                 const connURL = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(dep.to)}&to=${encodeURIComponent(other.to)}&limit=1`;
-                const connData = await fetch(connURL, { signal }).then(r => r.json());
+                const connData = await fetchJSON(connURL, { signal });
                 const conn = (connData.connections || [])[0];
 
                 if (conn && Array.isArray(conn.sections)) {
@@ -727,7 +835,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function checkDeparturesForStop(stopNameCandidate) {
     const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopNameCandidate)}&limit=${STATIONBOARD_LIMIT}`;
     try {
-      const data = await fetch(API_URL).then(r => r.json());
+      const data = await fetchJSON(API_URL);
       const departures = data.stationboard || [];
       const now = Date.now();
       return departures.some(dep => toDepartureInfo(dep, now) !== null);
@@ -800,19 +908,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Stop and time of the departures last received, kept on screen when a later refresh fails.
+  let lastDeparturesStop = null;
+  let lastDeparturesTime = null;
   async function fetchDepartures() {
     const key = STOP_NAME;
-    if (!key || String(key).trim() === "") return;
+    if (!key || String(key).trim() === "" || key === t("stopPlaceholder")) return;
     const API_URL = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(key)}&limit=${STATIONBOARD_LIMIT}`;
     if (currentFetchController && !currentFetchController.signal.aborted) currentFetchController.abort();
     const controller = new AbortController();
     currentFetchController = controller;
     const signal = controller.signal;
     try {
-      const data = await fetch(API_URL, { signal }).then(r => r.json());
+      const data = await fetchJSON(API_URL, { signal });
       if (signal.aborted) return;
+      clearStatus("network");
       let departures = (data && data.stationboard) ? data.stationboard : [];
       lastDepartures = departures;
+      lastDeparturesStop = key;
+      lastDeparturesTime = new Date();
 
       const lines = [...new Set(departures.map(lineKeyOf))];
       lines.sort(compareLineKeys);
@@ -824,7 +938,7 @@ document.addEventListener("DOMContentLoaded", () => {
         !isSwissStation(dep.to) &&
         lineColors.categories.trains.includes(dep.category);
 
-      // Destinations déjà vérifiées appliquées avant le premier affichage ; les autres restent en attente (italique/sablier).
+      // Already verified destinations are applied before the first render; the others are shown as pending (italic + hourglass).
       const toVerify = [];
       departures.forEach(dep => {
         if (!needsDestinationCheck(dep)) return;
@@ -858,7 +972,16 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       if (e.name === "AbortError") return;
       console.error("Erreur chargement départs", e);
-      departuresContainer.innerHTML = `<p>${t("loadError")}</p>`;
+      // Same stop: the last departures stay on screen (countdowns updated); another stop: nothing to show.
+      if (lastDeparturesStop === key && lastDeparturesTime) {
+        showStatus("network", networkErrorKey(e), fmtHM(lastDeparturesTime));
+        renderInBackground(lastDepartures);
+      } else {
+        showStatus("network", networkErrorKey(e));
+        lastDepartures = [];
+        renderInBackground(lastDepartures);
+        buildLineFilter([], lastDepartures);
+      }
     } finally {
       if (currentFetchController === controller) currentFetchController = null;
     }
@@ -872,7 +995,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Garde le thermomètre ouvert s'il concerne l'arrêt affiché (les autres rendus le ferment).
+  // Keeps the thermometer open if it belongs to the current stop (other renders close it).
   function renderInBackground(departures) {
     const keepThermo = thermo && thermo.style.display === "block" && thermo.dataset.stop === STOP_NAME;
     renderCurrentMode(departures);
@@ -899,8 +1022,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return "";
   }
 
-  const filterModal = setupModal({ box: filterBox, toggleBtn: toggleFilterBtn, closeId: "filter-close", bodyClass: "filters-open" });
-  const settingsModal = setupModal({ box: settingsBox, toggleBtn: btnSettings, closeId: "settings-close", bodyClass: "settings-open" });
+  const filterModal = setupModal({ box: filterBox, toggleBtn: toggleFilterBtn, closeId: "filter-close", bodyClass: "filters-open", view: "filters" });
+  const settingsModal = setupModal({ box: settingsBox, toggleBtn: btnSettings, closeId: "settings-close", bodyClass: "settings-open", view: "settings" });
   function renderSettingsBox() {
     if (!settingsBox) return;
     settingsBox.innerHTML = `
@@ -926,6 +1049,10 @@ document.addEventListener("DOMContentLoaded", () => {
         ).join("")}
       </div>
       <div class="settings-section">
+        <h3>${t("screen")}</h3>
+        <label class="filter-item"><input type="checkbox" id="setting-keep-screen-on"> ${t("keepScreenOn")}</label>
+      </div>
+      <div class="settings-section">
         <h3>${t("language")}</h3>
         ${Object.entries(LANGUAGES).map(([code, name]) =>
           `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
@@ -948,6 +1075,14 @@ document.addEventListener("DOMContentLoaded", () => {
         saveAppSettings(appSettings);
         setThemePreference(r.value);
       });
+    });
+
+    const keepScreenOnCb = settingsBox.querySelector("#setting-keep-screen-on");
+    keepScreenOnCb.checked = appSettings.keepScreenOn;
+    keepScreenOnCb.addEventListener("change", () => {
+      appSettings.keepScreenOn = keepScreenOnCb.checked;
+      saveAppSettings(appSettings);
+      updateWakeLock();
     });
 
     settingsBox.querySelectorAll('input[name="language"]').forEach(r => {
@@ -1005,7 +1140,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   renderSettingsBox();
 
-  // Changement de langue : textes de la page, menu réglages, bandeau de retour et départs affichés.
   function changeLanguage(lang) {
     const showingPlaceholder = STOP_NAME === t("stopPlaceholder");
     appSettings.language = lang;
@@ -1021,8 +1155,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     renderSettingsBox();
     updateJumpBanner();
+    renderStatus();
     renderInBackground(lastDepartures);
   }
+
+  // Keeps the screen on while the app is visible (setting off by default). The browser releases the lock
+  // when the app is hidden, so it is requested again when the app comes back.
+  let wakeLock = null;
+  async function updateWakeLock() {
+    const wanted = appSettings.keepScreenOn && document.visibilityState === "visible";
+    if (wanted && !wakeLock && "wakeLock" in navigator) {
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      } catch {}
+    } else if (!wanted && wakeLock) {
+      wakeLock.release().catch(() => {});
+      wakeLock = null;
+    }
+  }
+  document.addEventListener("visibilitychange", updateWakeLock);
+  updateWakeLock();
+
+  window.addEventListener("offline", () => {
+    showStatus("network", "offline", lastDeparturesStop === STOP_NAME && lastDeparturesTime ? fmtHM(lastDeparturesTime) : null);
+  });
+  window.addEventListener("online", () => {
+    clearStatus("network");
+    fetchDepartures();
+  });
 
   function isMobileDevice() {
     return window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -1066,25 +1227,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Capture phase: runs before the modals' own outside-click handlers, while they are still marked open.
   document.addEventListener("click", (e) => {
     if (!document.body.classList.contains("fullscreen")) return;
     if (!isMobileDevice()) return;
+    if (document.body.classList.contains("settings-open") || document.body.classList.contains("filters-open")) return;
 
     const interactiveElements = [
-      ".line-card", ".departure-card", ".departure-item", ".line-checkbox", 
-      "#quick-actions button", "#thermo-back", ".thermo-row-link", "#jump-back",
+      ".line-card", ".departure-card", ".departure-item", ".line-checkbox",
+      "#quick-actions button", "#thermo-container", "#jump-back", "#status-banner",
+      "#settings-box", "#line-filter-box",
       "#stop-name", "#stop-suggestions div",
       "#fullscreen-toggle"
     ];
-    
-    const isInteractive = interactiveElements.some(selector => 
+
+    const isInteractive = interactiveElements.some(selector =>
       e.target.closest(selector)
     );
 
     if (!isInteractive) {
       exitFullscreen();
     }
-  });
+  }, true);
 
   function resetDeparturesView(timeMode) {
     clearMarqueeTimers(departureMarqueeTimers);
@@ -1094,9 +1258,8 @@ document.addEventListener("DOMContentLoaded", () => {
     departuresContainer.style.display = "";
   }
 
-  // Défilement en boucle des noms de destination/arrêt trop longs pour leur espace,
-  // avec une pause de 2s à chaque retour au premier caractère.
-  // Deux registres séparés (cartes / thermomètre) pour qu'ouvrir l'un n'arrête pas l'autre en arrière-plan.
+  // Looping marquee for destination/stop names too long for their space, with a 2 s pause at the start.
+  // Separate timer buckets (cards / thermometer) so opening one does not stop the other in the background.
   let departureMarqueeTimers = [];
   let thermoMarqueeTimers = [];
   function clearMarqueeTimers(bucket) {
@@ -1108,13 +1271,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!inner) return;
     const overflow = Math.round(inner.scrollWidth - container.clientWidth);
     if (overflow <= 1) return;
-    const msPerChar = 150; // vitesse : temps par caractère, uniforme quelle que soit la longueur du texte
+    const msPerChar = 150; // constant speed regardless of text length
     const pauseMs = 2000;
     const charCount = Math.max(1, inner.textContent.length);
 
-    // Boucle continue : texte, 3 espaces, puis le même texte à nouveau.
-    // On défile jusqu'à ce que la 2e copie arrive à la position de départ de la 1re (visuellement identique),
-    // ce qui permet de reboucler sans à-coup après la pause.
+    // Text, 3 spaces, then the same text again: scrolling until the second copy reaches the start position
+    // of the first one (visually identical) allows a seamless loop after the pause.
     const originalHTML = inner.innerHTML;
     inner.innerHTML = `<span class="marquee-copy">${originalHTML}</span><span class="marquee-gap">&nbsp;&nbsp;&nbsp;</span><span class="marquee-copy">${originalHTML}</span>`;
     const secondCopy = inner.children[2];
@@ -1190,7 +1352,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const list = document.createElement("div");
           list.className = "departure-times";
           list.innerHTML = times.slice(0, 5).map(o => {
-            const pl = o.platform ? ` ${t("platform")} ${escapeHtml(o.platform)}` : "";
+            const pl = o.platform ? ` ${platformHTML(o)}` : "";
             return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}" data-train="${escapeHtml(o.trainName || '')}">${o.timeStr}${delayHTML(o.delay)} (${o.minutesLeft} min)${pl}</span>`;
           }).join("");
           card.appendChild(list);
@@ -1236,7 +1398,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     allDepartures.sort((a, b) => a.effMs - b.effMs);
 
-    allDepartures.forEach(({ dep, timeStr, minutesLeft, platform, delay }) => {
+    allDepartures.forEach((info) => {
+      const { dep, timeStr, minutesLeft, platform, delay } = info;
       const destination = dep.to || "";
       const trainName = dep.name || "";
       const badge = getLineBadge(dep.category || "", dep.number || "", dep.operator);
@@ -1266,7 +1429,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (platform) {
         const platformSpan = document.createElement("span");
         platformSpan.className = "departure-platform";
-        platformSpan.textContent = `${t("platform")} ${platform}`;
+        platformSpan.innerHTML = platformHTML(info);
         infoDiv.appendChild(platformSpan);
       }
 
@@ -1281,7 +1444,8 @@ document.addEventListener("DOMContentLoaded", () => {
     setupMarquees(departuresContainer, departureMarqueeTimers);
   }
 
-  async function showThermometer(fromName, toName, hhmm, lineLabel, trainName) {
+  // pushHistory: false when reopened from a history entry (Back/Forward).
+  async function showThermometer(fromName, toName, hhmm, lineLabel, trainName, pushHistory = true) {
     if (!thermo) return;
     try {
       let passList = [];
@@ -1346,7 +1510,6 @@ document.addEventListener("DOMContentLoaded", () => {
           const tdiv = document.createElement("div");
           tdiv.className = "thermo-time";
           if (t) {
-            // Avances/retards selon les réglages, comme sur les cartes de départ.
             const minTxt = minutesLeft !== null ? ` (${minutesLeft} min)` : "";
             tdiv.innerHTML = `${fmtHM(t)}${delayHTML(delay)}${minTxt}`;
           } else {
@@ -1365,7 +1528,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const target = body.children[idx];
           target?.scrollIntoView({ block: "center" });
 
-          // Arrêts suivants cliquables : ouvre leurs départs à partir de l'heure d'arrivée du trajet.
+          // Next stops are clickable: opens their departures from this trip's arrival time.
           passList.forEach((p, i) => {
             if (i <= idx) return;
             const name = p.station?.name;
@@ -1384,7 +1547,9 @@ document.addEventListener("DOMContentLoaded", () => {
       departuresContainer.style.display = "none";
       thermo.style.display = "block";
       thermo.dataset.stop = fromName;
-      lastThermoArgs = [fromName, toName, hhmm, lineLabel, trainName];
+      if (pushHistory && history.state?.view !== "thermo") {
+        history.pushState({ tp: currentTp(), view: "thermo", thermoArgs: [fromName, toName, hhmm, lineLabel, trainName] }, "");
+      }
     } catch (e) {
       console.error("Thermomètre erreur", e);
     }
@@ -1396,12 +1561,14 @@ document.addEventListener("DOMContentLoaded", () => {
       fetchSuggestionsByLocation(cached.lon, cached.lat, () => {});
     }
 
+    if (navigator.onLine === false) showStatus("network", "offline");
     if (STOP_NAME === t("stopPlaceholder")) {
       updateUserLocation(
         () => findAndFillBestStop(),
         {
           fresh: true,
           withWatch: true,
+          report: true,
           quickCallback: () => findAndFillBestStop()
         }
       );

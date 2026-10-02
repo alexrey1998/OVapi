@@ -1,5 +1,4 @@
-// colors.js
-// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
+// Any code change requires updating the version number (see sw.js).
 export const lineColors = {
   TPG: {
     "1": "#5A1E82",
@@ -61,9 +60,6 @@ export const lineColors = {
     "83": "#EC619F",
     "91": "#005F61",
     "92": "#89CBBE",
-    "271": "#FFDC00",
-    "272": "#00B0A4",
-    "274": "#EC619F",
     "12": "#F5A300",
     "14": "#5A1E82",
     "15": "#84471C",
@@ -394,6 +390,15 @@ export const lineColors = {
     "6": "#007738",
     "7": "#A25100",
     "8": "#E5007B"
+  },
+
+  AFO: {
+    "271": "#FFDC00",
+    "272": "#00B0A4"
+  },
+
+  JAC: {
+    "274": "#EC619F"
   },
 
   categories: {

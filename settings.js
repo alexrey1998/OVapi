@@ -1,18 +1,17 @@
-// settings.js
-// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
+// Any code change requires updating the version number (see sw.js).
 export const settings = {
-  // Nombre max de départs récupérés depuis l'API
+  // Max number of departures fetched from the API
   stationboardLimit: 150,
-  // Période max d'affichage des départs (format hh:mm:ss)
+  // Max display window for departures (hh:mm:ss)
   maxDisplayPeriod: "06:30:00",
-  // Intervalle de rafraîchissement automatique (format hh:mm:ss)
+  // Auto-refresh interval (hh:mm:ss)
   refreshInterval: "00:01:00",
   stopName: {
-    // Taille du préfixe (avant la virgule) en % de la taille normale
+    // Size of the prefix (before the comma) in % of the normal size
     prefixScalePct: 80,
-    // Couleur du suffixe (après la virgule) - "default" ou valeur CSS valide
+    // Color of the suffix (after the comma): "default" or any valid CSS color
     suffixColor: "#2d327d",
-    // Même chose en mode sombre
+    // Same, in dark mode
     suffixColorDark: "#A5ABE8"
   }
 };

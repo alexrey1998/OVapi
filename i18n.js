@@ -1,6 +1,5 @@
-// i18n.js
-// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
-// Textes de l'interface ; les données (arrêts, lignes, destinations) ne sont pas traduites.
+// Any code change requires updating the version number (see sw.js).
+// UI texts only; data (stops, lines, destinations) is not translated.
 export const LANGUAGES = { fr: "Français", de: "Deutsch", it: "Italiano", en: "English" };
 export const DEFAULT_LANGUAGE = "fr";
 const FALLBACK_LANGUAGE = "en";
@@ -22,7 +21,15 @@ const texts = {
     back: "← Retour",
     departuresAfter: "départs après",
     noData: "Données indisponibles pour cet itinéraire.",
-    loadError: "Erreur de chargement",
+    offline: "Pas de connexion internet.",
+    apiError: "Service des horaires indisponible. Nouvel essai automatique.",
+    dataFrom: "Données de {time}.",
+    geoDenied: "Localisation refusée. Tapez le nom d'un arrêt.",
+    geoUnavailable: "Position introuvable. Tapez le nom d'un arrêt.",
+    geoUnsupported: "Localisation indisponible sur cet appareil. Tapez le nom d'un arrêt.",
+    noNearbyStop: "Aucun arrêt trouvé à proximité.",
+    screen: "Écran",
+    keepScreenOn: "Garder l'écran allumé",
     platform: "pl.",
     language: "Langue",
     theme: "Thème",
@@ -58,7 +65,15 @@ const texts = {
     back: "← Zurück",
     departuresAfter: "Abfahrten ab",
     noData: "Keine Daten für diese Verbindung verfügbar.",
-    loadError: "Fehler beim Laden",
+    offline: "Keine Internetverbindung.",
+    apiError: "Fahrplandienst nicht erreichbar. Neuer Versuch erfolgt automatisch.",
+    dataFrom: "Daten von {time}.",
+    geoDenied: "Standortzugriff verweigert. Geben Sie eine Haltestelle ein.",
+    geoUnavailable: "Standort nicht gefunden. Geben Sie eine Haltestelle ein.",
+    geoUnsupported: "Standort auf diesem Gerät nicht verfügbar. Geben Sie eine Haltestelle ein.",
+    noNearbyStop: "Keine Haltestelle in der Nähe gefunden.",
+    screen: "Bildschirm",
+    keepScreenOn: "Bildschirm eingeschaltet lassen",
     platform: "Gl.",
     language: "Sprache",
     theme: "Darstellung",
@@ -94,7 +109,15 @@ const texts = {
     back: "← Indietro",
     departuresAfter: "partenze dopo le",
     noData: "Dati non disponibili per questo itinerario.",
-    loadError: "Errore di caricamento",
+    offline: "Nessuna connessione internet.",
+    apiError: "Servizio orari non disponibile. Nuovo tentativo automatico.",
+    dataFrom: "Dati delle {time}.",
+    geoDenied: "Localizzazione negata. Inserisci il nome di una fermata.",
+    geoUnavailable: "Posizione non trovata. Inserisci il nome di una fermata.",
+    geoUnsupported: "Localizzazione non disponibile su questo dispositivo. Inserisci il nome di una fermata.",
+    noNearbyStop: "Nessuna fermata trovata nelle vicinanze.",
+    screen: "Schermo",
+    keepScreenOn: "Mantieni lo schermo acceso",
     platform: "bin.",
     language: "Lingua",
     theme: "Tema",
@@ -130,7 +153,15 @@ const texts = {
     back: "← Back",
     departuresAfter: "departures after",
     noData: "No data available for this route.",
-    loadError: "Loading error",
+    offline: "No internet connection.",
+    apiError: "Timetable service unavailable. Retrying automatically.",
+    dataFrom: "Data from {time}.",
+    geoDenied: "Location access denied. Enter a stop name.",
+    geoUnavailable: "Location not found. Enter a stop name.",
+    geoUnsupported: "Location is not available on this device. Enter a stop name.",
+    noNearbyStop: "No stop found nearby.",
+    screen: "Screen",
+    keepScreenOn: "Keep the screen on",
     platform: "pl.",
     language: "Language",
     theme: "Theme",
@@ -154,7 +185,6 @@ const texts = {
 
 let current = DEFAULT_LANGUAGE;
 
-// Langue du navigateur si elle fait partie des quatre, sinon anglais.
 export function browserLanguage() {
   const code = String(navigator.language || "").slice(0, 2).toLowerCase();
   return code in LANGUAGES ? code : FALLBACK_LANGUAGE;
@@ -164,10 +194,13 @@ export function setLanguage(lang) {
   document.documentElement.lang = current;
 }
 export function getLanguage() { return current; }
-export function t(key) {
-  return texts[current][key] ?? texts[DEFAULT_LANGUAGE][key] ?? key;
+// vars: values for {name} placeholders in the text.
+export function t(key, vars) {
+  let text = texts[current][key] ?? texts[DEFAULT_LANGUAGE][key] ?? key;
+  if (vars) for (const [name, value] of Object.entries(vars)) text = text.split(`{${name}}`).join(value);
+  return text;
 }
-// Éléments marqués dans la page : data-i18n (texte), data-i18n-label (title + aria-label), data-i18n-aria (aria-label seul).
+// Marked elements: data-i18n (text), data-i18n-label (title + aria-label), data-i18n-aria (aria-label only).
 export function applyStaticTexts(root = document) {
   root.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
   root.querySelectorAll("[data-i18n-label]").forEach(el => {

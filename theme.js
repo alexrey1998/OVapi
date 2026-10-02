@@ -1,22 +1,20 @@
-// theme.js
-// Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js).
-// Mode clair entre le lever et le coucher du soleil, sombre sinon (ou choix manuel dans les réglages).
-// Le mode en cache est appliqué avant l'affichage par le petit script en tête de <body> (index.html).
+// Any code change requires updating the version number (see sw.js).
+// Light mode between sunrise and sunset, dark otherwise (unless chosen manually in the settings).
+// The cached mode is applied before first paint by the inline script at the top of <body> (index.html).
 
-// Centre géographique de la Suisse (Älggi-Alp, Sachseln).
+// Geographic centre of Switzerland (Älggi-Alp, Sachseln).
 const LATITUDE = 46.8010;
 const LONGITUDE = 8.2266;
 const CACHE_KEY = "theme.v1";
 const CHECK_INTERVAL_MS = 10 * 60 * 1000;
-// Couleur de la barre du navigateur (meta theme-color) selon le mode.
 const BROWSER_BAR_COLORS = { light: "#007bff", dark: "#121417" };
 export const THEME_CHOICES = ["auto", "light", "dark"];
 
 const rad = deg => deg * Math.PI / 180;
 const deg = r => r * 180 / Math.PI;
 
-// Lever et coucher du soleil du jour de `date` (formule NOAA : déclinaison solaire + équation du temps).
-// Calcul en UTC : les objets Date renvoyés s'affichent d'eux-mêmes à l'heure locale (été/hiver compris).
+// Sunrise and sunset for the day of `date` (NOAA formula: solar declination + equation of time).
+// Computed in UTC: the returned Date objects display in local time on their own (DST included).
 export function sunTimes(date = new Date()) {
   const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
   const midnightUtc = Date.UTC(y, m, d);
@@ -29,7 +27,7 @@ export function sunTimes(date = new Date()) {
     - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g)
     - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
   const lat = rad(LATITUDE);
-  // 90,833° : réfraction atmosphérique et rayon du disque solaire.
+  // 90.833°: atmospheric refraction and solar disc radius.
   const cosH = Math.cos(rad(90.833)) / (Math.cos(lat) * Math.cos(decl)) - Math.tan(lat) * Math.tan(decl);
   const hourAngle = deg(Math.acos(Math.min(1, Math.max(-1, cosH))));
   const sunriseMin = 720 - 4 * (LONGITUDE + hourAngle) - eqTimeMin;
@@ -53,7 +51,7 @@ function writeCache(c) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch {}
 }
 
-// Heures du jour : celles du cache si elles datent d'aujourd'hui, sinon recalculées.
+// Today's times from the cache, recomputed when the day has changed.
 function todaySunTimes(now) {
   const today = localDateKey(now);
   const c = readCache();
@@ -82,7 +80,7 @@ function update() {
   writeCache({ mode, ...sun });
 }
 
-// Au démarrage : applique le mode, puis vérifie toutes les 10 min et au retour de l'app au premier plan.
+// Applies the mode, then rechecks every 10 min and when the app returns to the foreground.
 export function startTheme(pref) {
   preference = THEME_CHOICES.includes(pref) ? pref : "auto";
   update();

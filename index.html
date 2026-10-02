@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -9,8 +8,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#007bff">
-<!-- Note pour les IA : à chaque modification du code, mettre à jour les deux ?v= (date-heure AAAA.MM.JJ.HH.MM) et CACHE_VERSION dans sw.js. -->
-<link rel="stylesheet" href="style.css?v=2026.10.01.23.40">
+<!-- After any code change, update both ?v= (date-time YYYY.MM.DD.HH.MM) and CACHE_VERSION in sw.js. -->
+<link rel="stylesheet" href="style.css?v=2026.10.02.02.20">
 
 <link rel="icon" type="image/svg+xml" href="icons/logo.svg">
 <link rel="icon" sizes="32x32" href="icons/icon-32.png">
@@ -18,7 +17,7 @@
 </head>
 <body>
 <script>
-  // Thème avant tout affichage (évite un flash clair) : mode en cache, sinon sombre. theme.js vérifie ensuite.
+  // Theme before first paint (avoids a light flash): cached mode, dark by default. theme.js checks afterwards.
   (function () {
     var mode = "dark";
     try {
@@ -33,6 +32,8 @@
 <h1 id="stop-name" contenteditable="true" spellcheck="false" data-placeholder="Entrez le nom de l'arrêt ici">Entrez le nom de l'arrêt ici</h1>
 
 <button id="jump-back" type="button" class="hidden"></button>
+
+<div id="status-banner" class="hidden" role="status" aria-live="polite"></div>
 
 <div id="stop-suggestions"></div>
 
@@ -75,6 +76,6 @@
     });
   }
 </script>
-<script type="module" src="script.js?v=2026.10.01.23.40"></script>
+<script type="module" src="script.js?v=2026.10.02.02.20"></script>
 </body>
 </html>

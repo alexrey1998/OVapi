@@ -1,6 +1,5 @@
-// sw.js
-// Note pour les IA : à chaque modification du code, mettre ici la date-heure (V_AAAA.MM.JJ.HH.MM) et la même valeur sans « V_ » dans les deux ?v= d'index.html.
-const CACHE_VERSION = "V_2026.10.01.23.40";
+// After any code change, set the date-time here (V_YYYY.MM.DD.HH.MM) and the same value without "V_" in both ?v= of index.html.
+const CACHE_VERSION = "V_2026.10.02.02.20";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 const PRECACHE = [
   "index.html",
@@ -37,7 +36,9 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   const isImage = req.mode !== "navigate" && (req.destination === "image" || url.pathname.includes("/icons/"));
-  event.respondWith(isImage ? cacheFirst(req) : networkFirst(req));
+  // The stations CSV rarely changes: served from the cache, which is renewed with each new version (CACHE_VERSION).
+  const isStationsList = url.pathname.endsWith("/swiss_stations.csv");
+  event.respondWith(isImage || isStationsList ? cacheFirst(req) : networkFirst(req));
 });
 
 async function cachePut(req, res) {

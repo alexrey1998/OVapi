@@ -1,6 +1,5 @@
-/* style.css */
-/* Note pour les IA : toute modification du code implique de changer le numéro de version (voir sw.js). */
-/* Couleurs : valeurs du mode clair ici, du mode sombre sur body.dark-mode (classe posée par theme.js). */
+/* Any code change requires updating the version number (see sw.js). */
+/* Colors: light mode values here, dark mode values on body.dark-mode (class set by theme.js). */
 :root {
   color-scheme: light;
   --page-bg: #f4f4f4;
@@ -36,6 +35,9 @@
   --close-hover: #555;
   --input-underline: #bbb;
   --fineprint: #6B7280;
+  --status-bg: #FFF4E5;
+  --status-text: #7A4100;
+  --status-border: #F5C27A;
 }
 body.dark-mode {
   color-scheme: dark;
@@ -70,6 +72,9 @@ body.dark-mode {
   --close-hover: #E6E8EB;
   --input-underline: #5A616B;
   --fineprint: #9AA1AA;
+  --status-bg: #3A2A12;
+  --status-text: #F5C98A;
+  --status-border: #6B4A1C;
 }
 * {
   margin: 0;
@@ -468,6 +473,20 @@ body.settings-open::before {
   text-align: left;
 }
 #jump-back.hidden { display: none; }
+#status-banner {
+  margin: -10px 0 16px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--status-border);
+  border-radius: 8px;
+  background: var(--status-bg);
+  color: var(--status-text);
+  font-size: 0.95rem;
+}
+.platform-old { opacity: 0.7; }
+.platform-new {
+  color: var(--late);
+  font-weight: 700;
+}
 .thermo-stop {
   overflow: hidden;
   white-space: nowrap;
@@ -522,6 +541,6 @@ body.settings-open::before {
   outline: none;
   border-bottom-color: var(--link);
 }
-/* Nom d'arrêt après la virgule : couleurs de settings.js (stopName), passées par formatStopNameHTML. */
+/* Stop name after the comma: colors from settings.js (stopName), passed by formatStopNameHTML. */
 .stopname-suffix { color: var(--suffix-light, inherit); }
 body.dark-mode .stopname-suffix { color: var(--suffix-dark, inherit); }
