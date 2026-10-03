@@ -1247,9 +1247,28 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!settingsBox) return;
     settingsBox.innerHTML = `
       <div class="settings-section">
+        <h3>${t("language")}</h3>
+        ${Object.entries(LANGUAGES).map(([code, name]) =>
+          `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
+        ).join("")}
+      </div>
+      <div class="settings-section">
         <h3>${t("autoRefresh")}</h3>
         <label class="filter-item"><input type="radio" name="refresh-interval" value="30000"> ${t("seconds30")}</label>
         <label class="filter-item"><input type="radio" name="refresh-interval" value="60000"> ${t("minute1")}</label>
+      </div>
+      <div class="settings-section">
+        <h3>${t("theme")}</h3>
+        ${THEME_CHOICES.map(choice =>
+          `<label class="filter-item"><input type="radio" name="theme" value="${choice}"> ${t("theme_" + choice)}</label>`
+        ).join("")}
+      </div>
+      <div class="settings-section">
+        <h3>${t("screen")}</h3>
+        <label class="filter-item"><input type="checkbox" id="setting-keep-screen-on"> ${t("keepScreenOn")}</label>
+        <label class="settings-field">
+          ${t("pageEvery")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-page-seconds" class="inline-value-input" aria-label="${t("pageSecondsLabel")}"> s
+        </label>
       </div>
       <div class="settings-section">
         <h3>${t("delays")}</h3>
@@ -1279,25 +1298,6 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>`).join("")}
         <datalist id="mc-symbols"><option value="="><option value="<"><option value=">"><option value="≤"><option value="≥"></datalist>
         <p class="mc-error hidden" role="alert"></p>
-      </div>
-      <div class="settings-section">
-        <h3>${t("theme")}</h3>
-        ${THEME_CHOICES.map(choice =>
-          `<label class="filter-item"><input type="radio" name="theme" value="${choice}"> ${t("theme_" + choice)}</label>`
-        ).join("")}
-      </div>
-      <div class="settings-section">
-        <h3>${t("screen")}</h3>
-        <label class="filter-item"><input type="checkbox" id="setting-keep-screen-on"> ${t("keepScreenOn")}</label>
-        <label class="settings-field">
-          ${t("pageEvery")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-page-seconds" class="inline-value-input" aria-label="${t("pageSecondsLabel")}"> s
-        </label>
-      </div>
-      <div class="settings-section">
-        <h3>${t("language")}</h3>
-        ${Object.entries(LANGUAGES).map(([code, name]) =>
-          `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
-        ).join("")}
       </div>
       <div class="settings-footer">
         <p>${t("legalNotice")}</p>
