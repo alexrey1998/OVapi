@@ -621,9 +621,16 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
 @media (hover: hover) {
   #thermo-back:hover { background: var(--hover); }
 }
+/* One grid shared by all rows (subgrid): the time column has the same width on every row, so the timeline stays straight. */
+#thermo-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+#thermo-body > * { grid-column: 1 / -1; }
 .thermo-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: subgrid;
   align-items: center;
   border-radius: var(--radius-sm);
 }
