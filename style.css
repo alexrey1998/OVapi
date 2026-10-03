@@ -930,6 +930,7 @@ body.settings-open::before {
   #header-inner { padding-top: 8px; padding-bottom: 6px; gap: 2px; }
   #control-bar { margin-left: 0; width: 100%; }
   #last-update { font-size: 0.82rem; }
+  #stop-name { font-size: clamp(2.025rem, 1.5rem + 2.4vw, 3rem); }
   #quick-actions {
     position: fixed;
     left: 0;

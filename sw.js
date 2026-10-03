@@ -1,5 +1,5 @@
 // After any code change, set the date-time here (V_YYYY.MM.DD.HH.MM) and the same value without "V_" in both ?v= of index.html.
-const CACHE_VERSION = "V_2026.10.03.05.07";
+const CACHE_VERSION = "V_2026.10.03.05.24";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 const PRECACHE = [
   "index.html",
