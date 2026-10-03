@@ -638,8 +638,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-gps")?.addEventListener("click", () => {
     updateUserLocation(() => {
       if (!userLocation) return;
-      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, (ok) => {
-        if (nearbyStops.length > 0) selectStop(nearbyStops[0].name);
+      fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async (ok) => {
+        const chosen = await nearestStopWithDepartures();
+        if (chosen) selectStop(chosen);
         else if (ok) showStatus("geo", "noNearbyStop");
       });
     }, { fresh: true, report: true });
@@ -946,6 +947,14 @@ document.addEventListener("DOMContentLoaded", () => {
       { enableHighAccuracy: true, maximumAge: fresh ? 0 : 15000, timeout: 8000 }
     );
   }
+  // Nearest of the 5 closest stops that has departures to display, else the nearest one (null if there is none).
+  // Used on first load and by the GPS button; the suggestions keep the pure distance order.
+  async function nearestStopWithDepartures() {
+    for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
+      if (await checkDeparturesForStop(nearbyStops[i].name)) return nearbyStops[i].name;
+    }
+    return nearbyStops.length > 0 ? nearbyStops[0].name : null;
+  }
   async function findAndFillBestStop() {
     if (!userLocation || !autoFillAllowed || STOP_NAME !== t("stopPlaceholder")) {
       return;
@@ -953,13 +962,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Promise((resolve) => {
       fetchSuggestionsByLocation(userLocation.lon, userLocation.lat, async (ok) => {
         if (ok && nearbyStops.length === 0) showStatus("geo", "noNearbyStop");
-        let chosen = null;
-        for (let i = 0; i < Math.min(5, nearbyStops.length); i++) {
-          const candidate = nearbyStops[i].name;
-          const ok = await checkDeparturesForStop(candidate);
-          if (ok) { chosen = candidate; break; }
-        }
-        if (!chosen && nearbyStops.length > 0) chosen = nearbyStops[0].name;
+        const chosen = await nearestStopWithDepartures();
         if (chosen && autoFillAllowed && STOP_NAME === t("stopPlaceholder")) selectStop(chosen);
         resolve(chosen);
       });
