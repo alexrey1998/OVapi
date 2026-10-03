@@ -1,5 +1,5 @@
 // After any code change, set the date-time here (V_YYYY.MM.DD.HH.MM) and the same value without "V_" in both ?v= of index.html.
-const CACHE_VERSION = "V_2026.10.02.04.00";
+const CACHE_VERSION = "V_2026.10.03.05.07";
 const CACHE_NAME = `tplive-${CACHE_VERSION}`;
 const PRECACHE = [
   "index.html",
@@ -7,7 +7,8 @@ const PRECACHE = [
   "icons/icon-16.png",
   "icons/icon-32.png",
   "icons/logo.svg",
-  "swiss_stations.csv"
+  "swiss_stations.csv",
+  "quais.csv"
 ];
 
 self.addEventListener("install", (event) => {
@@ -36,8 +37,8 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   const isImage = req.mode !== "navigate" && (req.destination === "image" || url.pathname.includes("/icons/"));
-  // The stations CSV rarely changes: served from the cache, which is renewed with each new version (CACHE_VERSION).
-  const isStationsList = url.pathname.endsWith("/swiss_stations.csv");
+  // The stations and platforms CSVs rarely change: served from the cache, which is renewed with each new version (CACHE_VERSION).
+  const isStationsList = url.pathname.endsWith("/swiss_stations.csv") || url.pathname.endsWith("/quais.csv");
   event.respondWith(isImage || isStationsList ? cacheFirst(req) : networkFirst(req));
 });
 

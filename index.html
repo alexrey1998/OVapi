@@ -2,14 +2,14 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>TP-Live</title>
 <link rel="manifest" href="manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#007bff">
+<meta name="theme-color" content="#ffffff">
 <!-- After any code change, update both ?v= (date-time YYYY.MM.DD.HH.MM) and CACHE_VERSION in sw.js. -->
-<link rel="stylesheet" href="style.css?v=2026.10.02.04.00">
+<link rel="stylesheet" href="style.css?v=2026.10.03.05.07">
 
 <link rel="icon" type="image/svg+xml" href="icons/logo.svg">
 <link rel="icon" sizes="32x32" href="icons/icon-32.png">
@@ -25,43 +25,65 @@
       if (c && (c.mode === "light" || c.mode === "dark")) mode = c.mode;
     } catch (e) {}
     document.body.classList.add(mode + "-mode");
-    if (mode === "dark") document.querySelector('meta[name="theme-color"]').setAttribute("content", "#121417");
+    if (mode === "dark") document.querySelector('meta[name="theme-color"]').setAttribute("content", "#181b21");
   })();
 </script>
 
-<h1 id="stop-name" contenteditable="true" spellcheck="false" data-placeholder="Entrez le nom de l'arrêt ici">Entrez le nom de l'arrêt ici</h1>
+<header id="app-header">
+  <div id="header-inner">
+    <div id="stop-box">
+      <h1 id="stop-name" contenteditable="true" spellcheck="false" data-placeholder="Entrez le nom de l'arrêt ici">Entrez le nom de l'arrêt ici</h1>
+      <div id="stop-suggestions"></div>
+    </div>
 
-<button id="jump-back" type="button" class="hidden"></button>
-
-<div id="status-banner" class="hidden" role="status" aria-live="polite"></div>
-
-<div id="stop-suggestions"></div>
-
-<div id="control-bar">
-  <p id="last-update">
-    <span><span data-i18n="updated">Màj :</span> <span id="update-time">-</span></span>
-    <span id="quick-actions">
-      <button id="btn-gps" data-i18n-label="gps" aria-label="Mettre à jour la position" title="Mettre à jour la position">📍</button>
-      <button id="btn-refresh" data-i18n-label="refresh" aria-label="Recharger les départs" title="Recharger les départs">↻</button>
-      <button id="btn-toggle-nearby" data-i18n-label="toggleNearby" aria-label="Basculer 1er/2e arrêt" title="Basculer 1er/2e arrêt">⇄</button>
-      <button id="btn-toggle-display" data-i18n-label="toggleDisplay" aria-label="Changer mode d'affichage" title="Changer mode d'affichage">☰</button>
-      <button id="btn-settings" data-i18n-label="settings" aria-label="Réglages" title="Réglages">⚙️</button>
-    </span>
-  </p>
-
-  <button id="fullscreen-toggle" data-i18n="fullscreen">Plein écran ↗️</button>
-
-  <div class="filter-container">
-    <button id="toggle-filter" data-i18n="lineFilters">Filtres de lignes</button>
-    <div id="line-filter-box" class="hidden"></div>
+    <div id="control-bar">
+      <p id="last-update">
+        <span id="update-label"><span class="live-dot" aria-hidden="true"></span><span data-i18n="updated">Màj :</span> <span id="update-time">-</span><span id="page-indicator" class="hidden"></span></span>
+        <span id="quick-actions">
+          <button id="btn-gps" type="button" data-i18n-label="gps" aria-label="Mettre à jour la position" title="Mettre à jour la position">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="8"/><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5"/></svg>
+          </button>
+          <button id="btn-refresh" type="button" data-i18n-label="refresh" aria-label="Recharger les départs" title="Recharger les départs">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 3.5V9H15"/></svg>
+          </button>
+          <button id="btn-toggle-nearby" type="button" data-i18n-label="toggleNearby" aria-label="Basculer 1er/2e arrêt" title="Basculer 1er/2e arrêt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg>
+          </button>
+          <button id="btn-toggle-display" type="button" data-i18n-label="toggleDisplay" aria-label="Changer mode d'affichage" title="Changer mode d'affichage">
+            <svg class="icon-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+            <svg class="icon-grid" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
+          </button>
+          <button id="toggle-filter" type="button" data-i18n-label="lineFilters" aria-label="Filtres de lignes" title="Filtres de lignes">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 5h17l-6.5 7.5V19l-4 2v-8.5z"/></svg>
+          </button>
+          <button id="fullscreen-toggle" type="button" data-i18n-label="fullscreen" aria-label="Plein écran" title="Plein écran">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+          </button>
+          <button id="paged-toggle" type="button" data-i18n-label="pagedFullscreen" aria-label="Plein écran en pages" title="Plein écran en pages">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z"/></svg>
+          </button>
+          <button id="btn-settings" type="button" data-i18n-label="settings" aria-label="Réglages" title="Réglages">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+        </span>
+      </p>
+    </div>
   </div>
-</div>
+</header>
 
-<div id="settings-box" class="hidden"></div>
+<main id="content">
+  <button id="jump-back" type="button" class="hidden"></button>
 
-<div id="departures"></div>
+  <div id="status-banner" class="hidden" role="status" aria-live="polite"></div>
 
-<div id="thermo-container" class="hidden"></div>
+  <div id="line-filter-box" class="hidden"></div>
+
+  <div id="settings-box" class="hidden"></div>
+
+  <div id="departures"></div>
+
+  <div id="thermo-container" class="hidden"></div>
+</main>
 
 <script>
   if ('serviceWorker' in navigator) {
@@ -76,6 +98,6 @@
     });
   }
 </script>
-<script type="module" src="script.js?v=2026.10.02.04.00"></script>
+<script type="module" src="script.js?v=2026.10.03.05.07"></script>
 </body>
 </html>

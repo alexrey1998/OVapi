@@ -164,28 +164,26 @@ export const lineColors = {
   },
   
   "MBC-cg": {
-    "2003": "#A0A0A0"
+    "2003": { background: "#A0A0A0", text: "#FFFFFF" }
   },
 
   "MBC Auto": {
-    "R56": "#02B646", 
-    "R57": "#006A28",
-    "701": "#004D21",
-    "702": "#F58F00", 
-    "703": "#611E83",
-    "704": "#8CBE0D",
-    "705": "#643900",
+    "701": { background: "#004D21", text: "#FFFFFF" },
+    "702": { background: "#F58F00", text: "#FFFFFF" },
+    "703": { background: "#611E83", text: "#FFFFFF" },
+    "704": { background: "#8CBE0D", text: "#FFFFFF" },
+    "705": { background: "#643900", text: "#FFFFFF" },
     "706": "#DECF37",
-    "724": "#AD559C",
-    "726": "#00A2E6",
-    "730": "#888A89",
-    "735": "#E7007C",
-    "736": "#8882BD",
-    "740": "#EC4A11",
-    "742": "#C0101E",
-    "750": "#23328B",
-    "752": "#D781B5",
-    "760": "#009894"
+    "724": { background: "#AD559C", text: "#FFFFFF" },
+    "726": { background: "#00A2E6", text: "#FFFFFF" },
+    "730": { background: "#888A89", text: "#FFFFFF" },
+    "735": { background: "#E7007C", text: "#FFFFFF" },
+    "736": { background: "#8882BD", text: "#FFFFFF" },
+    "740": { background: "#EC4A11", text: "#FFFFFF" },
+    "742": { background: "#C0101E", text: "#FFFFFF" },
+    "750": { background: "#23328B", text: "#FFFFFF" },
+    "752": { background: "#D781B5", text: "#FFFFFF" },
+    "760": { background: "#009894", text: "#FFFFFF" }
   },
   
   "TMR Auto": {
@@ -417,6 +415,22 @@ export const lineColors = {
 
   categories: {
     trains: ["R", "S", "RN", "SN", "RE", "IR", "IC", "ICE", "EC", "TGV", "PE", "NJ", "EXT", "TER", "RER"],
+    // Train colors by category, from search.ch (2026-10-03); trainsColor for the others (RN, RER).
+    trainColors: {
+      R: { background: "#003399", text: "#FFFFFF" },
+      S: { background: "#003399", text: "#FFFFFF" },
+      SN: { background: "#000000", text: "#FFFFFF" },
+      RE: { background: "#FF0000", text: "#FFFFFF" },
+      IC: { background: "#FF0000", text: "#FFFFFF" },
+      IR: { background: "#FF0000", text: "#FFFFFF" },
+      ICE: { background: "#FF0000", text: "#FFFFFF" },
+      EC: { background: "#FF0000", text: "#FFFFFF" },
+      TGV: { background: "#FF0000", text: "#FFFFFF" },
+      PE: { background: "#FF0000", text: "#FFFFFF" },
+      NJ: { background: "#FF0000", text: "#FFFFFF" },
+      EXT: { background: "#FF0000", text: "#FFFFFF" },
+      TER: { background: "#003399", text: "#FFFFFF" }
+    },
     trainsColor: "#eb0000",
     GB: "#9ca3af",
     default: "#007bff"
@@ -960,5 +974,25 @@ export const lineColors = {
     "165": { background: "#559398", text: "#FFFFFF" },
     "172": { background: "#008266", text: "#FFFFFF" },
     "175": { background: "#CC6778", text: "#FFFFFF" }
+  },
+
+  VMCV: {
+    "201": { background: "#0874BB", text: "#FFFFFF" },
+    "202": { background: "#744A9E", text: "#FFFFFF" },
+    "203": { background: "#D694C1", text: "#000000" },
+    "204": { background: "#F59640", text: "#000000" },
+    "205": { background: "#9ACC5B", text: "#000000" },
+    "206": { background: "#0D6C38", text: "#FFFFFF" },
+    "208": { background: "#264395", text: "#FFFFFF" },
+    "210": { background: "#DB3E30", text: "#FFFFFF" },
+    "211": { background: "#47C2C3", text: "#000000" },
+    "212": { background: "#4B7485", text: "#FFFFFF" },
+    "213": { background: "#DE247B", text: "#FFFFFF" },
+    "215": { background: "#CD5527", text: "#FFFFFF" },
+    "216": { background: "#0B8756", text: "#FFFFFF" },
+    "217": { background: "#C4A92A", text: "#000000" },
+    "218": { background: "#6E5B38", text: "#FFFFFF" },
+    "290": { background: "#000000", text: "#F8ED30" },
+    "291": { background: "#000000", text: "#F8ED30" }
   }
 };
