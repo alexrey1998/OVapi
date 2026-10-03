@@ -583,7 +583,10 @@ document.addEventListener("DOMContentLoaded", () => {
     clearStatus("geo");
     displayMode = loadDisplayMode(name);
     updateDisplayButtonIcon();
-    if (!fromHistory) history.replaceState({ tp: currentTp() }, "");
+    if (!fromHistory) {
+      const keepFullscreen = history.state?.view === "fullscreen" && document.body.classList.contains("fullscreen");
+      history.replaceState(keepFullscreen ? { tp: currentTp(), view: "fullscreen" } : { tp: currentTp() }, "");
+    }
     fetchDepartures();
   }
   function isThermoOpen() {
@@ -604,6 +607,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   window.addEventListener("popstate", (e) => {
     const state = e.state || {};
+    if (state.view === "fullscreen") {
+      // Entry left behind when the full screen was closed from a view stacked on it (thermometer…): skip it.
+      if (!document.body.classList.contains("fullscreen")) { history.back(); return; }
+    } else if (document.body.classList.contains("fullscreen")) {
+      exitFullscreen();
+    }
     if (state.view !== "settings") settingsModal.close();
     if (state.view !== "filters") filterModal.close();
     const s = state.tp;
@@ -1511,7 +1520,9 @@ document.addEventListener("DOMContentLoaded", () => {
     return navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
   }
 
+  // Entering adds a history entry (state.view) so the phone's Back button leaves the full screen.
   function enterFullscreen() {
+    if (!document.body.classList.contains("fullscreen")) history.pushState({ ...(history.state || {}), view: "fullscreen" }, "");
     if (isMobileDevice()) {
       document.body.classList.add("fullscreen");
     } else {
@@ -1533,6 +1544,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       document.body.classList.remove("fullscreen");
     }
+    if (history.state?.view === "fullscreen") history.back();
   }
 
   const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
@@ -1546,10 +1558,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.addEventListener("fullscreenchange", () => {
-    if (!document.fullscreenElement) {
-      stopPaged();
-      document.body.classList.remove("fullscreen");
-    }
+    if (!document.fullscreenElement && document.body.classList.contains("fullscreen")) exitFullscreen();
   });
 
   // Capture phase: runs before the modals' own outside-click handlers, while they are still marked open.
