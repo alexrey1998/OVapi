@@ -623,6 +623,7 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
 }
 /* One grid shared by all rows (subgrid): the time column has the same width on every row, so the timeline stays straight. */
 #thermo-body {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
 }
@@ -665,19 +666,31 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
   border: 2px solid var(--text-muted);
   box-sizing: border-box;
 }
-.thermo-row:first-child .thermo-time::before { top: 50%; }
-.thermo-row:last-child .thermo-time::before { bottom: 50%; }
+/* "of-type": the rows are divs, the train dot after them is a span. */
+.thermo-row:first-of-type .thermo-time::before { top: 50%; }
+.thermo-row:last-of-type .thermo-time::before { bottom: 50%; }
 .thermo-row.thermo-past { opacity: .5; }
-.thermo-row.thermo-current .thermo-time::after {
+.thermo-row.thermo-current .thermo-stop { font-weight: 700; }
+/* Arrival above departure (script.js: thermoTimeHTML). */
+.thermo-line { display: block; }
+/* Train position (script.js: placeThermoDot): moved every second along the timeline, pulsing only while moving. */
+#thermo-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 16px;
   height: 16px;
-  margin-top: -8px;
-  right: 7px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
   background: var(--accent);
-  border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-soft);
+  transition: transform 1s linear;
+  pointer-events: none;
 }
-.thermo-row.thermo-current .thermo-stop { font-weight: 700; }
+#thermo-dot.moving { animation: thermo-pulse 2.4s ease-in-out infinite; }
+@keyframes thermo-pulse {
+  50% { box-shadow: 0 0 0 8px var(--accent-soft); }
+}
 .thermo-stop {
   overflow: hidden;
   white-space: nowrap;
@@ -690,6 +703,38 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
 @media (max-width: 599px) {
   .thermo-time { min-width: 8.5rem; font-size: 0.92rem; }
 }
+
+/* ---------- First-launch notice (script.js: showNoticeOnce): a card at the bottom, like a cookie banner ---------- */
+#notice-dialog {
+  top: auto;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  width: min(560px, calc(100% - 32px));
+  max-width: none;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--card-shadow);
+}
+#notice-dialog::backdrop { background: rgba(0, 0, 0, .4); }
+#notice-dialog p { margin: 0 0 14px; line-height: 1.45; }
+#notice-ok {
+  display: block;
+  margin-left: auto;
+  min-height: var(--tap);
+  padding: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+#notice-ok:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- Modals (filters, settings): bottom sheet on phones, centered dialog elsewhere ---------- */
 body.filters-open::before,
@@ -1001,7 +1046,7 @@ body.paged #departures { will-change: transform; }
 /* Large screens in full screen: everything scales with the window, for reading from afar. */
 @media (min-width: 1024px) {
   :root:has(body.fullscreen) { font-size: clamp(16px, 1.15vw, 30px); }
-  body.fullscreen #departures:not(.time-mode) { grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+  body.fullscreen #departures:not(.time-mode) { grid-template-columns: repeat(auto-fill, minmax(min(100%, 20.625rem), 1fr)); }
 }
 
 /* Wide desktop screens: a little more air. */

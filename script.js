@@ -3,6 +3,7 @@ import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
 import { LANGUAGES, browserLanguage, setLanguage, t, applyStaticTexts } from "./i18n.js";
 import { THEME_CHOICES, startTheme, setThemePreference } from "./theme.js";
+import { normalizePassList, boardEntryStops, mergeStops, isComplete, findTrain, trainPosition, nextPollStop } from "./thermo.js";
 function getInt(val, dflt) {
   const n = Number(val);
   return Number.isFinite(n) && n > 0 ? n : dflt;
@@ -381,12 +382,19 @@ function approxPlatformHTML(dep, known) {
   // transport.opendata.ch: x is the latitude, y the longitude.
   return mapLinksHTML([x, y], station.name || "", "-");
 }
-async function fetchFirstConnection(from, to, hhmm) {
-  const now = new Date();
-  const date = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-  const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=1&date=${encodeURIComponent(date)}&time=${encodeURIComponent(hhmm)}`;
-  const data = await fetchJSON(url);
-  return (data.connections || [])[0];
+function apiDate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+// Planner fallback for the thermometer (stationboard passList missing or not reaching the destination): the passList
+// of this very train (same name) among several connections, searched from its scheduled departure.
+async function fetchTrainJourney(from, to, schedDepMs, trainName, signal) {
+  const d = new Date(schedDepMs);
+  const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=5&date=${apiDate(d)}&time=${encodeURIComponent(fmtHM(d))}`;
+  const data = await fetchJSON(url, { signal });
+  for (const conn of data.connections || []) {
+    for (const section of conn.sections || []) {
+      if (section.journey?.name === trainName && Array.isArray(section.journey.passList)) return section.journey.passList;
+    }
+  }
+  return null;
 }
 function hasComma(stopName) {
   return String(stopName).includes(',');
@@ -484,6 +492,13 @@ document.addEventListener("DOMContentLoaded", () => {
       else closeThermometer();
     });
   }
+  // Open thermometer: { fromName, toName, trainName, schedDepMs, stops } (stops: thermo.js). See showThermometer.
+  let thermoState = null;
+  // "train|scheduled departure" → stops, so Back/Forward still shows a train that has left the board.
+  const thermoMemory = new Map();
+  let thermoTimer = null;
+  let thermoFallbackController = null;
+  let thermoPollController = null;
   // Status banner (no network, location errors…). One message per source; a source only clears its own message.
   const statusBanner = document.getElementById("status-banner");
   let currentStatus = null;
@@ -594,6 +609,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   function closeThermometer() {
     if (!thermo) return;
+    stopThermoUpdates();
+    thermoState = null;
     clearMarqueeTimers(thermoMarqueeTimers);
     thermo.style.display = "none";
     departuresContainer.style.display = "";
@@ -1162,6 +1179,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       renderInBackground(departures);
       buildLineFilter(lines, departures);
+      refreshThermometer(departures);
 
       if (toVerify.length) {
         await Promise.all(toVerify.map(async ({ dep, key }) => {
@@ -1995,7 +2013,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const pl = o.platform ? platformHTML(o) : approx;
             const plHTML = pl ? `<span class="item-platform">${pl}</span>` : "";
             const cdClass = `item-cd ${minuteColorClass(appSettings.minuteColors, o.minutesLeft)}`;
-            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-time="${o.timeStr}" data-train="${escapeHtml(o.trainName || '')}"><span class="item-time">${o.timeStr}${delayHTML(o.delay)}</span><span class="${cdClass}">${o.minutesLeft} min</span>${plHTML}</span>`;
+            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-sched="${escapeHtml(o.dep.stop?.departure || '')}" data-train="${escapeHtml(o.trainName || '')}"><span class="item-time">${o.timeStr}${delayHTML(o.delay)}</span><span class="${cdClass}">${o.minutesLeft} min</span>${plHTML}</span>`;
           }).join("");
           row.appendChild(list);
         } else {
@@ -2017,9 +2035,9 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
           }
           const dest = depEl.getAttribute("data-dest");
-          const timeStr = depEl.getAttribute("data-time");
+          const sched = depEl.getAttribute("data-sched");
           const trainName = depEl.getAttribute("data-train");
-          showThermometer(STOP_NAME, dest, timeStr, badge.label, trainName);
+          showThermometer(STOP_NAME, dest, sched, badge.label, trainName);
         });
       } else {
         card.addEventListener("click", () => {
@@ -2084,7 +2102,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       card.addEventListener("click", (e) => {
         if (e.target.closest(".platform-link")) return;
-        showThermometer(STOP_NAME, destination, timeStr, badge.label, trainName);
+        showThermometer(STOP_NAME, destination, dep.stop?.departure, badge.label, trainName);
       });
 
       departuresContainer.appendChild(card);
@@ -2094,121 +2112,232 @@ document.addEventListener("DOMContentLoaded", () => {
     scheduleFullscreenFit();
   }
 
-  // pushHistory: false when reopened from a history entry (Back/Forward).
-  async function showThermometer(fromName, toName, hhmm, lineLabel, trainName, pushHistory = true) {
+  // Thermometer of the train clicked: its stops come from the passList of the board already loaded (no request), plus
+  // the part abroad found by adjustTrainDestination (trainPassListCache). Logic in thermo.js.
+  // sched: scheduled departure of the train at this stop (API string). pushHistory: false when reopened from history.
+  async function showThermometer(fromName, toName, sched, lineLabel, trainName, pushHistory = true) {
     if (!thermo) return;
     try {
-      let passList = [];
-
-      if (trainName && trainPassListCache[trainName]) {
-        const cachedPassList = trainPassListCache[trainName];
-        const intermediateStation = cachedPassList[0]?.station?.name;
-
-        if (intermediateStation && intermediateStation !== fromName) {
-          const conn = await fetchFirstConnection(fromName, intermediateStation, hhmm);
-          let firstSegment = [];
-
-          if (conn && Array.isArray(conn.sections)) {
-            for (const section of conn.sections) {
-              if (section.journey && Array.isArray(section.journey.passList) && section.journey.passList.length > 0) {
-                if (firstSegment.length === 0) {
-                  firstSegment = [...section.journey.passList];
-                } else {
-                  const sectionStops = [...section.journey.passList];
-                  sectionStops.shift();
-                  firstSegment.push(...sectionStops);
-                }
-              }
-            }
-          }
-
-          if (firstSegment.length > 0) {
-            firstSegment.pop();
-          }
-          passList = [...firstSegment, ...cachedPassList];
-        } else {
-          passList = cachedPassList;
-        }
-      } else {
-        const conn = await fetchFirstConnection(fromName, toName, hhmm);
-        if (conn && Array.isArray(conn.sections)) {
-          const vehicleSection = conn.sections.find(s => s.journey && Array.isArray(s.journey.passList));
-          if (vehicleSection) passList = vehicleSection.journey.passList;
-        }
-      }
-
-      const header = thermo.querySelector("#thermo-title");
-      header.textContent = `${fromName} → ${toName}`;
-      const body = thermo.querySelector("#thermo-body");
-      clearMarqueeTimers(thermoMarqueeTimers);
-      body.innerHTML = "";
-
-      if (!passList || passList.length === 0) {
-        body.innerHTML = `<p>${t("noData")}</p>`;
-      } else {
-        const nowMs = Date.now();
-        passList.forEach(p => {
-          const name = p.station?.name || "";
-          const sched = p.departure || p.arrival;
-          const delay = Number(p.departureDelay ?? p.arrivalDelay ?? p.delay ?? 0);
-          const t = sched ? new Date(sched) : null;
-          const effMs = t ? withDelay(t.getTime(), delay) : null;
-          const minutesLeft = effMs ? minutesUntil(effMs, nowMs) : null;
-
-          const row = document.createElement("div");
-          row.className = "thermo-row";
-          const tdiv = document.createElement("div");
-          tdiv.className = "thermo-time";
-          if (t) {
-            const minTxt = minutesLeft !== null ? ` (${minutesLeft} min)` : "";
-            tdiv.innerHTML = `${fmtHM(t)}${delayHTML(delay)}${minTxt}`;
-          } else {
-            tdiv.textContent = "—";
-          }
-          const nd = document.createElement("div");
-          nd.className = "thermo-stop";
-          nd.innerHTML = `<span class="marquee-inner">${escapeHtml(name)}</span>`;
-          row.appendChild(tdiv);
-          row.appendChild(nd);
-          body.appendChild(row);
-        });
-
-        const idx = passList.findIndex(p => (p.station?.name || "").toLowerCase() === fromName.toLowerCase());
-        if (idx >= 0) {
-          // Timeline (style.css): stops before the current one dimmed, current one highlighted.
-          [...body.children].forEach((row, i) => {
-            row.classList.toggle("thermo-past", i < idx);
-            row.classList.toggle("thermo-current", i === idx);
-          });
-          const target = body.children[idx];
-          target?.scrollIntoView({ block: "center" });
-
-          // Next stops are clickable: opens their departures from this trip's arrival time.
-          passList.forEach((p, i) => {
-            if (i <= idx) return;
-            const name = p.station?.name;
-            const arrSched = p.arrival || p.departure;
-            if (!name || !arrSched) return;
-            const arrivalMs = withDelay(new Date(arrSched).getTime(), Number(p.arrivalDelay ?? p.delay ?? p.departureDelay ?? 0));
-            if (!Number.isFinite(arrivalMs)) return;
-            const row = body.children[i];
-            row.classList.add("thermo-row-link");
-            row.addEventListener("click", () => jumpToStop(name, arrivalMs));
-          });
-        }
-        setupMarquees(body, thermoMarqueeTimers);
-      }
-
+      stopThermoUpdates();
+      const state = { fromName, toName, trainName, schedDepMs: new Date(sched).getTime(), stops: [] };
+      const entry = findTrain(lastDepartures, trainName, state.schedDepMs);
+      state.stops = updatedStops(thermoMemory.get(thermoKey(state)), entry, trainName);
+      thermoState = state;
+      rememberThermo(state);
+      thermo.querySelector("#thermo-title").textContent = `${fromName} → ${toName}`;
+      renderThermoRows(state);
       departuresContainer.style.display = "none";
       thermo.style.display = "block";
       thermo.dataset.stop = fromName;
+      placeThermoDot(false);
+      thermo.querySelector(".thermo-current")?.scrollIntoView({ block: "center" });
+      startThermoTimer();
       if (pushHistory && history.state?.view !== "thermo") {
-        history.pushState({ tp: currentTp(), view: "thermo", thermoArgs: [fromName, toName, hhmm, lineLabel, trainName] }, "");
+        history.pushState({ tp: currentTp(), view: "thermo", thermoArgs: [fromName, toName, sched, lineLabel, trainName] }, "");
+      }
+      // Planner only when the passList is missing or does not reach the destination.
+      if (trainName && Number.isFinite(state.schedDepMs) && !isComplete(state.stops, toName)) {
+        const controller = thermoFallbackController = new AbortController();
+        const passList = await fetchTrainJourney(state.stops[0]?.stationId || fromName, toName, state.schedDepMs, trainName, controller.signal);
+        if (passList && thermoState === state) {
+          state.stops = mergeStops(state.stops, normalizePassList(passList));
+          showThermoUpdate(state, false);
+        }
       }
     } catch (e) {
-      console.error("Thermomètre erreur", e);
+      if (e.name !== "AbortError") console.error("Thermomètre erreur", e);
     }
   }
+  const thermoKey = s => `${s.trainName}|${s.schedDepMs}`;
+  function rememberThermo(state) {
+    thermoMemory.delete(thermoKey(state));
+    thermoMemory.set(thermoKey(state), state.stops);
+    if (thermoMemory.size > 20) thermoMemory.delete(thermoMemory.keys().next().value);
+  }
+  // The part abroad first, then the board's reading, more recent, which overwrites it where they overlap.
+  function updatedStops(stops, entry, trainName) {
+    let out = stops || [];
+    const abroad = trainName && trainPassListCache[trainName];
+    if (abroad) out = mergeStops(out, normalizePassList(abroad));
+    if (entry) out = mergeStops(out, boardEntryStops(entry));
+    return out;
+  }
+  function showThermoUpdate(state, animate) {
+    rememberThermo(state);
+    renderThermoRows(state);
+    placeThermoDot(animate);
+  }
+  // At each refresh: the train (same name and scheduled departure here) is looked for in the new board. Once it has
+  // left it, the board of its next stop is asked instead (one request per refresh; errors keep the last values).
+  async function refreshThermometer(departures) {
+    const state = thermoState;
+    if (!state || !state.trainName || !isThermoOpen() || thermo.dataset.stop !== STOP_NAME) return;
+    const entry = findTrain(departures, state.trainName, state.schedDepMs);
+    state.stops = updatedStops(state.stops, entry, state.trainName);
+    showThermoUpdate(state, true);
+    if (entry) return;
+    const i = nextPollStop(state.stops, trainPosition(state.stops, Date.now()).position);
+    if (i < 0) return;
+    const stop = state.stops[i];
+    thermoPollController?.abort();
+    const controller = thermoPollController = new AbortController();
+    try {
+      const d = new Date(stop.schedDep);
+      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stop.stationId)}&limit=30&datetime=${encodeURIComponent(`${apiDate(d)} ${fmtHM(d)}`)}`;
+      const data = await fetchJSON(url, { signal: controller.signal });
+      const found = findTrain(data.stationboard, state.trainName, stop.schedDep);
+      if (!found || thermoState !== state) return;
+      state.stops = mergeStops(state.stops, boardEntryStops(found));
+      showThermoUpdate(state, true);
+    } catch {}
+  }
+  // Time cell: arrival above departure when they differ (first stop: departure only, terminus: arrival only).
+  // "(N min)" on the departure line (arrival for the terminus).
+  function thermoTimeHTML(s, i, last, nowMs) {
+    const line = (sched, eff, delay, withMinutes) => {
+      const minutes = withMinutes ? ` (${minutesUntil(eff ?? sched, nowMs)} min)` : "";
+      return `<span class="thermo-line">${fmtHM(new Date(sched))}${delayHTML(delay)}${minutes}</span>`;
+    };
+    const arr = i > 0 && s.schedArr !== null;
+    const dep = i < last && s.schedDep !== null;
+    if (arr && dep && s.schedArr !== s.schedDep) return line(s.schedArr, s.effArr, s.arrDelay, false) + line(s.schedDep, s.effDep, s.depDelay, true);
+    if (dep) return line(s.schedDep, s.effDep, s.depDelay, true);
+    if (arr) return line(s.schedArr, s.effArr, s.arrDelay, true);
+    return "—";
+  }
+  function renderThermoRows(state) {
+    const body = thermo.querySelector("#thermo-body");
+    const { stops } = state;
+    const last = stops.length - 1;
+    const nowMs = Date.now();
+    // Same train and same stops as on screen: only the times change, the marquees keep running.
+    const structure = [state.fromName, thermoKey(state), ...stops.map(s => `${s.stationId}|${s.name}`)].join(";");
+    if (stops.length && body.dataset.structure === structure) {
+      body.querySelectorAll(".thermo-time").forEach((el, i) => { el.innerHTML = thermoTimeHTML(stops[i], i, last, nowMs); });
+      return;
+    }
+    body.dataset.structure = structure;
+    clearMarqueeTimers(thermoMarqueeTimers);
+    body.innerHTML = "";
+    if (!stops.length) {
+      body.innerHTML = `<p>${t("noData")}</p>`;
+      return;
+    }
+    const fromIdx = Math.max(0, stops.findIndex(s => s.name.toLowerCase() === state.fromName.toLowerCase()));
+    stops.forEach((s, i) => {
+      const row = document.createElement("div");
+      row.className = "thermo-row";
+      const tdiv = document.createElement("div");
+      tdiv.className = "thermo-time";
+      tdiv.innerHTML = thermoTimeHTML(s, i, last, nowMs);
+      const nd = document.createElement("div");
+      nd.className = "thermo-stop";
+      nd.innerHTML = `<span class="marquee-inner">${escapeHtml(s.name)}</span>`;
+      row.appendChild(tdiv);
+      row.appendChild(nd);
+      if (i === fromIdx) row.classList.add("thermo-current");
+      // Next stops are clickable: their departures from this train's effective arrival time.
+      if (i > fromIdx && !s.pseudo) {
+        row.classList.add("thermo-row-link");
+        row.addEventListener("click", () => {
+          const st = thermoState?.stops[i] || s;
+          jumpToStop(st.name, st.effArr ?? st.effDep ?? st.schedArr ?? st.schedDep);
+        });
+      }
+      body.appendChild(row);
+    });
+    const dot = document.createElement("span");
+    dot.id = "thermo-dot";
+    dot.setAttribute("aria-hidden", "true");
+    body.appendChild(dot);
+    setupMarquees(body, thermoMarqueeTimers);
+  }
+  // Blue dot: position from the device clock (thermo.js: trainPosition), placed on the real geometry of the rows.
+  // Stops behind it are dimmed. animate: false for a jump (render, resize, return to the tab).
+  function placeThermoDot(animate) {
+    const body = thermo?.querySelector("#thermo-body");
+    const dot = body?.querySelector("#thermo-dot");
+    const rows = body ? [...body.querySelectorAll(".thermo-row")] : [];
+    if (!thermoState || !dot || !rows.length) return;
+    const { position, moving } = trainPosition(thermoState.stops, Date.now());
+    rows.forEach((row, i) => row.classList.toggle("thermo-past", i < position));
+    // Centre of a stop's circle: 15 px from the right edge of its time cell (style.css: .thermo-time::before/::after).
+    const point = i => {
+      const cell = rows[i].firstElementChild;
+      return [cell.offsetLeft + cell.offsetWidth - 15, cell.offsetTop + cell.offsetHeight / 2];
+    };
+    const lo = Math.min(rows.length - 1, Math.floor(position));
+    const hi = Math.min(rows.length - 1, Math.ceil(position));
+    const [x, y0] = point(lo);
+    const y = y0 + (point(hi)[1] - y0) * (position - lo);
+    if (!animate) dot.style.transition = "none";
+    dot.style.transform = `translate(${x}px, ${y}px)`;
+    dot.classList.toggle("moving", moving);
+    if (!animate) {
+      dot.getBoundingClientRect();
+      dot.style.transition = "";
+    }
+  }
+  // One timer, every second, only while the thermometer is open and the tab visible.
+  function startThermoTimer() {
+    clearInterval(thermoTimer);
+    thermoTimer = document.visibilityState === "visible" ? setInterval(thermoTick, 1000) : null;
+  }
+  function thermoTick() {
+    if (!thermoState || !isThermoOpen()) {
+      stopThermoUpdates();
+      return;
+    }
+    placeThermoDot(true);
+  }
+  function stopThermoUpdates() {
+    clearInterval(thermoTimer);
+    thermoTimer = null;
+    thermoFallbackController?.abort();
+    thermoPollController?.abort();
+    thermoFallbackController = thermoPollController = null;
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!thermoState || !isThermoOpen()) return;
+    if (document.visibilityState === "visible") {
+      placeThermoDot(false);
+      startThermoTimer();
+    } else {
+      clearInterval(thermoTimer);
+      thermoTimer = null;
+    }
+  });
+  if (thermo && "ResizeObserver" in window) {
+    new ResizeObserver(() => { if (isThermoOpen()) placeThermoDot(false); }).observe(thermo);
+  } else {
+    window.addEventListener("resize", () => { if (isThermoOpen()) placeThermoDot(false); });
+  }
+
+  // First launch: what the app does not show. A single button (no ×, no outside click, no Escape); the flag is created
+  // when it is used. It is kept in localStorage, which sw.js never clears: it survives new versions and goes only
+  // with the site's data.
+  const NOTICE_KEY = "noticeAck.v1";
+  function showNoticeOnce() {
+    try { if (localStorage.getItem(NOTICE_KEY)) return; } catch {}
+    const dialog = document.createElement("dialog");
+    dialog.id = "notice-dialog";
+    dialog.setAttribute("aria-labelledby", "notice-text");
+    dialog.innerHTML = `<p id="notice-text">${escapeHtml(t("noticeText"))}</p><button type="button" id="notice-ok" autofocus>${escapeHtml(t("noticeOk"))}</button>`;
+    document.body.appendChild(dialog);
+    let acknowledged = false;
+    const open = () => { if (dialog.showModal) dialog.showModal(); else dialog.setAttribute("open", ""); };
+    // Escape or the Back gesture close a modal dialog in some browsers: it comes back until the button is used.
+    dialog.addEventListener("cancel", e => e.preventDefault());
+    dialog.addEventListener("close", () => { if (!acknowledged) open(); });
+    dialog.querySelector("#notice-ok").addEventListener("click", () => {
+      acknowledged = true;
+      try { localStorage.setItem(NOTICE_KEY, "1"); } catch {}
+      dialog.close();
+      dialog.remove();
+    });
+    open();
+  }
+  showNoticeOnce();
 
   (async () => {
     const cached = loadLastFix();

@@ -74,7 +74,9 @@ const texts = {
     live_ok: "Données à jour",
     live_stale: "Données anciennes : pas de mise à jour récente",
     live_error: "Hors ligne ou service des horaires indisponible",
-    live_idle: "Aucun arrêt chargé"
+    live_idle: "Aucun arrêt chargé",
+    noticeText: "Les départs supprimés et certains changements de voie ne sont pas affichés. Vérifiez toujours l'information officielle avant de vous déplacer.",
+    noticeOk: "J'ai compris"
   },
   de: {
     stopPlaceholder: "Haltestelle hier eingeben",
@@ -145,7 +147,9 @@ const texts = {
     live_ok: "Daten aktuell",
     live_stale: "Daten veraltet: keine aktuelle Aktualisierung",
     live_error: "Offline oder Fahrplandienst nicht erreichbar",
-    live_idle: "Keine Haltestelle geladen"
+    live_idle: "Keine Haltestelle geladen",
+    noticeText: "Ausgefallene Verbindungen und gewisse Gleisänderungen werden nicht angezeigt. Prüfen Sie vor der Reise immer die offiziellen Informationen.",
+    noticeOk: "Verstanden"
   },
   it: {
     stopPlaceholder: "Inserisci qui il nome della fermata",
@@ -216,7 +220,9 @@ const texts = {
     live_ok: "Dati aggiornati",
     live_stale: "Dati non recenti: nessun aggiornamento recente",
     live_error: "Offline o servizio orari non disponibile",
-    live_idle: "Nessuna fermata caricata"
+    live_idle: "Nessuna fermata caricata",
+    noticeText: "Le partenze soppresse e alcuni cambi di binario non vengono visualizzati. Verifica sempre le informazioni ufficiali prima di partire.",
+    noticeOk: "Ho capito"
   },
   rm: {
     stopPlaceholder: "Endatescha qua il num da la fermada",
@@ -287,7 +293,10 @@ const texts = {
     live_ok: "Datas actualas",
     live_stale: "Datas veglias: nagina actualisaziun recenta",
     live_error: "Offline u servetsch d'urari betg disponibel",
-    live_idle: "Nagina fermada chargiada"
+    live_idle: "Nagina fermada chargiada",
+    // To be reviewed by a Romansh speaker.
+    noticeText: "Partenzas annulladas ed intginas midadas da binari na vegnan betg mussadas. Controllescha adina las infurmaziuns uffizialas avant che partir.",
+    noticeOk: "Jau hai chapì"
   },
   en: {
     stopPlaceholder: "Enter the stop name here",
@@ -358,7 +367,9 @@ const texts = {
     live_ok: "Data up to date",
     live_stale: "Old data: no recent update",
     live_error: "Offline or timetable service unavailable",
-    live_idle: "No stop loaded"
+    live_idle: "No stop loaded",
+    noticeText: "Cancelled departures and some platform changes are not shown. Always check the official information before you travel.",
+    noticeOk: "Got it"
   }
 };
 
