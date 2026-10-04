@@ -191,7 +191,7 @@ body.dark-mode .stopname-suffix { color: var(--suffix-dark, inherit); }
   display: flex;
   align-items: center;
   flex: 0 1 auto;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 #last-update {
   display: flex;
@@ -286,7 +286,7 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
   font-size: 0.95rem;
   cursor: pointer;
   max-width: 100%;
-  text-align: left;
+  text-align: start;
   box-shadow: var(--card-shadow);
 }
 #jump-back.hidden { display: none; }
@@ -435,7 +435,7 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
 .departure-item .item-cd.mc-green { color: var(--soon); font-weight: 700; }
 .departure-item .item-cd.mc-black { color: var(--text); }
 .departure-item .item-cd.mc-none { opacity: .6; }
-.departure-item .item-platform { margin-left: auto; color: var(--text-muted); white-space: nowrap; }
+.departure-item .item-platform { margin-inline-start: auto; color: var(--text-muted); white-space: nowrap; }
 @media (hover: hover) {
   .departure-item:hover { filter: brightness(0.96); }
   body.dark-mode .departure-item:hover { filter: brightness(1.15); }
@@ -521,7 +521,7 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
   font-size: 0.75em;
   font-weight: 500;
   color: var(--text-muted);
-  margin-left: 2px;
+  margin-inline-start: 2px;
 }
 .departure-card .departure-countdown.mc-red,
 .departure-card .departure-countdown.mc-red .unit { color: var(--late); }
@@ -564,6 +564,12 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
   display: inline-block;
   position: relative;
   white-space: nowrap;
+}
+/* Right-to-left languages: the names (data, written left to right) keep their direction, so the marquee scrolls the same way. */
+[dir="rtl"] .departure-destination,
+[dir="rtl"] .thermo-stop {
+  direction: ltr;
+  text-align: right;
 }
 .late { color: var(--late); font-weight: 650; }
 .platform-old { opacity: 0.7; }
@@ -636,18 +642,18 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
   border-radius: var(--radius-sm);
 }
 .thermo-row > * { padding: 10px 0; }
-/* Timeline drawn at the right edge of the time column (the stop column stays free for the marquee). */
+/* Timeline drawn at the end edge (right, or left in right-to-left languages) of the time column (the stop column stays free for the marquee). */
 .thermo-time {
   position: relative;
   font-variant-numeric: tabular-nums;
   min-width: 10rem;
-  padding-right: 34px;
+  padding-inline-end: 34px;
   white-space: nowrap;
 }
 .thermo-time::before {
   content: "";
   position: absolute;
-  right: 14px;
+  inset-inline-end: 14px;
   top: 0;
   bottom: 0;
   width: 2px;
@@ -656,7 +662,7 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
 .thermo-time::after {
   content: "";
   position: absolute;
-  right: 9px;
+  inset-inline-end: 9px;
   top: 50%;
   width: 12px;
   height: 12px;
@@ -723,7 +729,7 @@ body.is-loading #btn-refresh svg { animation: spin .9s linear infinite; }
 #notice-dialog p { margin: 0 0 14px; line-height: 1.45; }
 #notice-ok {
   display: block;
-  margin-left: auto;
+  margin-inline-start: auto;
   min-height: var(--tap);
   padding: 8px 18px;
   border: 1px solid var(--border);
@@ -799,7 +805,7 @@ body.settings-open::before {
 #settings-close {
   position: sticky;
   top: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   margin-bottom: 8px;
   background: var(--button-bg);
   border: 1px solid var(--border);
@@ -913,6 +919,65 @@ body.settings-open::before {
   outline: none;
   border-bottom-color: var(--accent);
 }
+/* Language: the main languages on the left, the search field for the others on the right (below on narrow screens). */
+.lang-columns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 32px;
+}
+.lang-more { position: relative; padding-top: 8px; }
+.lang-more input {
+  border: none;
+  background: var(--surface);
+  font: inherit;
+  color: inherit;
+  width: 22ch;
+  max-width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-bottom: 2px solid var(--input-underline);
+}
+.lang-more input:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+/* List of the other languages under the search field (script.js: setupMoreLanguageSearch), same look as #stop-suggestions. */
+.lang-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: 5;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(320px, 80vw);
+  max-height: 260px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--modal-shadow);
+}
+.lang-suggestions div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: var(--tap);
+  box-sizing: border-box;
+  cursor: pointer;
+  border-bottom: 1px solid var(--separator);
+}
+.lang-suggestions div:last-child { border-bottom: none; }
+.lang-suggestions div.selected { background-color: var(--hover); }
+@media (hover: hover) {
+  .lang-suggestions div:hover { background-color: var(--hover); }
+}
+.lang-suggestions .lang-ui-name { color: var(--text-muted); font-size: 0.85em; }
+/* Language in use: shown in bold with a check mark, since the field is emptied after a choice. */
+.lang-suggestions div.current { font-weight: 700; }
+.lang-suggestions div.current::after { content: "✓"; margin-inline-start: auto; color: var(--accent); }
 /* Minute colors rows: swatch, name, rule fields, checkbox on the right. */
 .settings-hint {
   font-size: 0.82rem;
@@ -949,7 +1014,7 @@ body.settings-open::before {
 .mc-row .mc-on {
   width: 18px;
   height: 18px;
-  margin-left: auto;
+  margin-inline-start: auto;
   accent-color: var(--accent);
 }
 .mc-row.off .mc-rule,
@@ -980,7 +1045,7 @@ body.settings-open::before {
 /* ---------- Phones: actions in a bottom bar, compact header ---------- */
 @media (max-width: 599px) {
   #header-inner { padding-top: 8px; padding-bottom: 6px; gap: 2px; }
-  #control-bar { margin-left: 0; width: 100%; }
+  #control-bar { margin-inline-start: 0; width: 100%; }
   #last-update { font-size: 0.82rem; }
   #stop-name { font-size: clamp(2.025rem, 1.5rem + 2.4vw, 3rem); }
   #quick-actions {
@@ -1041,7 +1106,7 @@ body.fullscreen #header-inner { max-width: none; width: 100%; }
 body.paged { overflow: hidden; }
 body.paged #departures { will-change: transform; }
 .page-hidden { display: none !important; }
-#page-indicator { margin-left: 8px; font-weight: 700; color: var(--text); }
+#page-indicator { margin-inline-start: 8px; font-weight: 700; color: var(--text); }
 #page-indicator.hidden { display: none; }
 /* Large screens in full screen: everything scales with the window, for reading from afar. */
 @media (min-width: 1024px) {

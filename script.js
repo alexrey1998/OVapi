@@ -1,7 +1,7 @@
 // Any code change requires updating the version number (see sw.js).
 import { lineColors } from "./colors.js";
 import { settings } from "./settings.js";
-import { LANGUAGES, browserLanguage, setLanguage, t, applyStaticTexts } from "./i18n.js";
+import { LANGUAGES, MORE_LANGUAGES, ALL_LANGUAGES, browserLanguage, setLanguage, getLanguage, isRtl, languageNameInUi, t, applyStaticTexts } from "./i18n.js";
 import { THEME_CHOICES, startTheme, setThemePreference } from "./theme.js";
 import { normalizePassList, boardEntryStops, mergeStops, isComplete, findTrain, trainPosition, nextPollStop } from "./thermo.js";
 function getInt(val, dflt) {
@@ -40,7 +40,7 @@ function loadAppSettings() {
       if (parsed && typeof parsed === "object") {
         const merged = { ...defaults, ...parsed };
         if (!REFRESH_CHOICES_MS.includes(merged.refreshMs)) merged.refreshMs = defaults.refreshMs;
-        if (!(merged.language in LANGUAGES)) merged.language = defaults.language;
+        if (!(merged.language in ALL_LANGUAGES)) merged.language = defaults.language;
         if (!THEME_CHOICES.includes(merged.theme)) merged.theme = defaults.theme;
         if (!validMinuteRules(merged.minuteColors)) merged.minuteColors = defaults.minuteColors;
         if (!Number.isInteger(merged.pageSeconds) || merged.pageSeconds < MIN_PAGE_SECONDS) merged.pageSeconds = defaults.pageSeconds;
@@ -63,6 +63,21 @@ async function fetchJSON(url, options) {
   const r = await fetch(url, options);
   if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`);
   return r.json();
+}
+// Exact time even when the device clock is wrong: offset read from the Date header of the site's own server at each
+// refresh. The header is rounded down to the second, so the offset is only applied beyond 2 s; kept when offline.
+let clockOffsetMs = 0;
+function clockNow() { return Date.now() + clockOffsetMs; }
+async function syncClock() {
+  try {
+    const sentMs = Date.now();
+    const r = await fetch("manifest.json", { method: "HEAD", cache: "no-store" });
+    const receivedMs = Date.now();
+    const serverMs = Date.parse(r.headers.get("Date"));
+    if (!Number.isFinite(serverMs)) return;
+    const offset = serverMs + 500 - (sentMs + receivedMs) / 2;
+    clockOffsetMs = Math.abs(offset) > 2000 ? Math.round(offset) : 0;
+  } catch {}
 }
 fetch("swiss_stations.csv")
   .then(r => {
@@ -460,10 +475,10 @@ function setupModal({ box, toggleBtn, closeId, bodyClass, view }) {
   });
   return { ensureClose, close };
 }
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   let appSettings = loadAppSettings();
   startTheme(appSettings.theme);
-  setLanguage(appSettings.language);
+  await setLanguage(appSettings.language);
   applyStaticTexts();
   const stopNameEl = document.getElementById("stop-name");
   if (stopNameEl) {
@@ -579,7 +594,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!jumpBanner) return;
     const visible = jumpBackStop !== null && minDepartureMs !== null;
     jumpBanner.classList.toggle("hidden", !visible);
-    if (visible) jumpBanner.textContent = `← ${jumpBackStop} · ${t("departuresAfter")} ${fmtHM(new Date(minDepartureMs))}`;
+    if (visible) jumpBanner.textContent = `${isRtl() ? "→" : "←"} ${jumpBackStop} · ${t("departuresAfter")} ${fmtHM(new Date(minDepartureMs))}`;
   }
   // History entries: { tp: displayed stop, view: "thermo" | "settings" | "filters", thermoArgs }.
   // Stop changes outside history navigation update the current entry, so going back never restores a stale stop.
@@ -1046,7 +1061,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const data = await fetchJSON(API_URL);
       const departures = data.stationboard || [];
-      const now = Date.now();
+      const now = clockNow();
       return departures.some(dep => toDepartureInfo(dep, now) !== null);
     } catch {
       return false;
@@ -1144,7 +1159,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const signal = controller.signal;
     document.body.classList.add("is-loading");
     try {
-      const data = await fetchJSON(API_URL, { signal });
+      const [data] = await Promise.all([fetchJSON(API_URL, { signal }), syncClock()]);
       if (signal.aborted) return;
       clearStatus("network");
       lastSuccessMs = Date.now();
@@ -1153,7 +1168,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let departures = (data && data.stationboard) ? data.stationboard : [];
       lastDepartures = departures;
       lastDeparturesStop = key;
-      lastDeparturesTime = new Date();
+      lastDeparturesTime = new Date(clockNow());
 
       const lines = [...new Set(departures.map(lineKeyOf))];
       lines.sort(compareLineKeys);
@@ -1193,7 +1208,7 @@ document.addEventListener("DOMContentLoaded", () => {
         renderInBackground(departures);
       }
 
-      const now = new Date();
+      const now = new Date(clockNow());
       if (lastUpdateElement) {
         lastUpdateElement.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       }
@@ -1268,10 +1283,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!settingsBox) return;
     settingsBox.innerHTML = `
       <div class="settings-section">
-        <h3>${t("language")}</h3>
-        ${Object.entries(LANGUAGES).map(([code, name]) =>
-          `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
-        ).join("")}
+        <h3>${withEnglish("language", "Language")}</h3>
+        <div class="lang-columns">
+          <div>
+            ${Object.entries(LANGUAGES).map(([code, name]) =>
+              `<label class="filter-item"><input type="radio" name="language" value="${code}"> ${name}</label>`
+            ).join("")}
+          </div>
+          <div class="lang-more">
+            <input type="text" id="setting-more-language" autocomplete="off" spellcheck="false" role="combobox"
+              aria-expanded="false" aria-controls="more-language-list" aria-autocomplete="list"
+              placeholder="${withEnglish("searchLanguage", "Search")}" aria-label="${t("moreLanguages")}">
+            <div id="more-language-list" class="lang-suggestions hidden" role="listbox"></div>
+          </div>
+        </div>
       </div>
       <div class="settings-section">
         <h3>${t("autoRefresh")}</h3>
@@ -1288,17 +1313,17 @@ document.addEventListener("DOMContentLoaded", () => {
         <h3>${t("screen")}</h3>
         <label class="filter-item"><input type="checkbox" id="setting-keep-screen-on"> ${t("keepScreenOn")}</label>
         <label class="settings-field">
-          ${t("pageEvery")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-page-seconds" class="inline-value-input" aria-label="${t("pageSecondsLabel")}"> s
+          ${t("pageEvery")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-page-seconds" class="inline-value-input" aria-label="${t("pageSecondsLabel")}"> ${t("unitSec")}
         </label>
       </div>
       <div class="settings-section">
         <h3>${t("delays")}</h3>
         <label class="filter-item"><input type="checkbox" id="setting-show-delay"> ${t("showDelay")}</label>
         <label class="settings-field">
-          ${t("showFrom")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-show-threshold" class="inline-value-input" aria-label="${t("showThresholdLabel")}"> min
+          ${t("showFrom")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-show-threshold" class="inline-value-input" aria-label="${t("showThresholdLabel")}"> ${t("unitMin")}
         </label>
         <label class="settings-field">
-          ${t("redFrom")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-red-threshold" class="inline-value-input" aria-label="${t("redThresholdLabel")}"> min
+          ${t("redFrom")} <input type="text" inputmode="numeric" pattern="[0-9]*" id="setting-delay-red-threshold" class="inline-value-input" aria-label="${t("redThresholdLabel")}"> ${t("unitMin")}
         </label>
       </div>
       <div class="settings-section" id="minute-colors-section">
@@ -1313,7 +1338,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <input type="text" class="inline-value-input mc-a" list="mc-symbols" autocomplete="off" aria-label="${t("mcStartLabel", { color: t("mc_" + c) })}">
               <span class="mc-to"></span>
               <input type="text" inputmode="numeric" pattern="[0-9]*" class="inline-value-input mc-b" aria-label="${t("mcEndLabel", { color: t("mc_" + c) })}">
-              <span>min</span>
+              <span>${t("unitMin")}</span>
             </span>
             <input type="checkbox" class="mc-on" aria-label="${t("mcUse", { color: t("mc_" + c) })}">
           </div>`).join("")}
@@ -1351,6 +1376,7 @@ document.addEventListener("DOMContentLoaded", () => {
       r.checked = r.value === appSettings.language;
       r.addEventListener("change", () => changeLanguage(r.value));
     });
+    setupMoreLanguageSearch();
 
     settingsBox.querySelectorAll('input[name="refresh-interval"]').forEach(r => {
       r.checked = Number(r.value) === appSettings.refreshMs;
@@ -1478,11 +1504,86 @@ document.addEventListener("DOMContentLoaded", () => {
   btnSettings?.addEventListener("click", () => refreshMinuteColorInputs?.());
   renderSettingsBox();
 
-  function changeLanguage(lang) {
+  // Languages of the search field, sorted by their name in the language of the interface.
+  // withMain: the 5 main languages too (only when something is typed in the search field).
+  function moreLanguageOptions(withMain = false) {
+    return Object.entries(withMain ? ALL_LANGUAGES : MORE_LANGUAGES)
+      .map(([code, name]) => ({ code, name, label: languageNameInUi(code) || name, english: languageNameInUi(code, "en") }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+  // Text of the interface followed by the English one in brackets, for those who do not read the chosen language.
+  function withEnglish(key, english) {
+    return getLanguage() === "en" ? t(key) : `${t(key)} (${english})`;
+  }
+  // Search field of the other languages, like the stop name: one click opens the whole list, typing filters it
+  // (name in that language, in the language of the interface or in English, accents ignored). The field is emptied after a choice.
+  // Typed text also finds the 5 main languages; their choice is shown by their radio button, not in the list.
+  function setupMoreLanguageSearch() {
+    const input = settingsBox.querySelector("#setting-more-language");
+    const list = settingsBox.querySelector("#more-language-list");
+    let index = -1;
+    const fold = text => text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    function items() { return [...list.querySelectorAll("[data-code]")]; }
+    function highlight() {
+      items().forEach((el, i) => el.classList.toggle("selected", i === index));
+      items()[index]?.scrollIntoView({ block: "nearest" });
+    }
+    function show() {
+      const wanted = fold(input.value.trim());
+      const found = moreLanguageOptions(wanted !== "").filter(({ name, label, english }) => [name, label, english].some(text => fold(text).includes(wanted)));
+      list.innerHTML = found.map(({ code, name, label }) =>
+        `<div role="option" data-code="${code}" lang="${code}"${code === appSettings.language && code in MORE_LANGUAGES ? ' class="current" aria-selected="true"' : ""}>` +
+        `<span>${escapeHtml(name)}</span>${fold(label) !== fold(name) ? `<span class="lang-ui-name" lang="${getLanguage()}">${escapeHtml(label)}</span>` : ""}</div>`
+      ).join("");
+      index = -1;
+      list.classList.toggle("hidden", !found.length);
+      input.setAttribute("aria-expanded", String(found.length > 0));
+    }
+    function hide() {
+      list.classList.add("hidden");
+      input.setAttribute("aria-expanded", "false");
+      index = -1;
+    }
+    function choose(code) {
+      input.value = "";
+      hide();
+      if (code !== appSettings.language) changeLanguage(code);
+    }
+    input.addEventListener("focus", show);
+    input.addEventListener("click", () => { if (list.classList.contains("hidden")) show(); });
+    input.addEventListener("input", show);
+    input.addEventListener("blur", hide);
+    input.addEventListener("keydown", e => {
+      const all = items();
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (list.classList.contains("hidden")) show();
+        if (!all.length) return;
+        index = e.key === "ArrowDown" ? (index + 1) % all.length : (index - 1 + all.length) % all.length;
+        highlight();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const el = all[index] ?? (all.length === 1 ? all[0] : null);
+        if (el) choose(el.dataset.code);
+      } else if (e.key === "Escape" && !list.classList.contains("hidden")) {
+        e.preventDefault();
+        e.stopPropagation();
+        hide();
+      }
+    });
+    // mousedown keeps the focus in the field (no blur), so the click on a language reaches the list.
+    list.addEventListener("mousedown", e => e.preventDefault());
+    list.addEventListener("click", e => {
+      const el = e.target.closest("[data-code]");
+      if (el) choose(el.dataset.code);
+    });
+  }
+  async function changeLanguage(lang) {
     const showingPlaceholder = STOP_NAME === t("stopPlaceholder");
     appSettings.language = lang;
     saveAppSettings(appSettings);
-    setLanguage(lang);
+    await setLanguage(lang);
+    if (appSettings.language !== lang) return; // another language was chosen in the meantime
     applyStaticTexts();
     if (stopNameEl) {
       stopNameEl.dataset.placeholder = t("stopPlaceholder");
@@ -1958,7 +2059,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const filtered = departures.filter(dep => selectedLines.has(lineKeyOf(dep)));
     const groupedByLine = {};
-    const nowMs = Date.now();
+    const nowMs = clockNow();
     const known = knownPlatforms(departures);
 
     filtered.forEach(dep => {
@@ -2013,7 +2114,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const pl = o.platform ? platformHTML(o) : approx;
             const plHTML = pl ? `<span class="item-platform">${pl}</span>` : "";
             const cdClass = `item-cd ${minuteColorClass(appSettings.minuteColors, o.minutesLeft)}`;
-            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-sched="${escapeHtml(o.dep.stop?.departure || '')}" data-train="${escapeHtml(o.trainName || '')}"><span class="item-time">${o.timeStr}${delayHTML(o.delay)}</span><span class="${cdClass}">${o.minutesLeft} min</span>${plHTML}</span>`;
+            return `<span class="departure-item" data-dest="${escapeHtml(dest)}" data-sched="${escapeHtml(o.dep.stop?.departure || '')}" data-train="${escapeHtml(o.trainName || '')}"><span class="item-time">${o.timeStr}${delayHTML(o.delay)}</span><span class="${cdClass}">${o.minutesLeft} ${t("unitMin")}</span>${plHTML}</span>`;
           }).join("");
           row.appendChild(list);
         } else {
@@ -2056,7 +2157,7 @@ document.addEventListener("DOMContentLoaded", () => {
     resetDeparturesView(true);
 
     const filtered = departures.filter(dep => selectedLines.has(lineKeyOf(dep)));
-    const nowMs = Date.now();
+    const nowMs = clockNow();
     const allDepartures = filtered.map(dep => toDepartureInfo(dep, nowMs)).filter(info => info && isAfterMinDeparture(info));
     const known = knownPlatforms(departures);
 
@@ -2082,7 +2183,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const countdownSpan = document.createElement("span");
       countdownSpan.className = `departure-countdown ${minuteColorClass(appSettings.minuteColors, minutesLeft)}`;
-      countdownSpan.innerHTML = `${minutesLeft}<span class="unit">min</span>`;
+      countdownSpan.innerHTML = `${minutesLeft}<span class="unit">${t("unitMin")}</span>`;
       infoDiv.appendChild(countdownSpan);
 
       const destSpan = document.createElement("span");
@@ -2176,7 +2277,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.stops = updatedStops(state.stops, entry, state.trainName);
     showThermoUpdate(state, true);
     if (entry) return;
-    const i = nextPollStop(state.stops, trainPosition(state.stops, Date.now()).position);
+    const i = nextPollStop(state.stops, trainPosition(state.stops, clockNow()).position);
     if (i < 0) return;
     const stop = state.stops[i];
     thermoPollController?.abort();
@@ -2195,7 +2296,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // "(N min)" on the departure line (arrival for the terminus).
   function thermoTimeHTML(s, i, last, nowMs) {
     const line = (sched, eff, delay, withMinutes) => {
-      const minutes = withMinutes ? ` (${minutesUntil(eff ?? sched, nowMs)} min)` : "";
+      const minutes = withMinutes ? ` (${minutesUntil(eff ?? sched, nowMs)} ${t("unitMin")})` : "";
       return `<span class="thermo-line">${fmtHM(new Date(sched))}${delayHTML(delay)}${minutes}</span>`;
     };
     const arr = i > 0 && s.schedArr !== null;
@@ -2209,7 +2310,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = thermo.querySelector("#thermo-body");
     const { stops } = state;
     const last = stops.length - 1;
-    const nowMs = Date.now();
+    const nowMs = clockNow();
     // Same train and same stops as on screen: only the times change, the marquees keep running.
     const structure = [state.fromName, thermoKey(state), ...stops.map(s => `${s.stationId}|${s.name}`)].join(";");
     if (stops.length && body.dataset.structure === structure) {
@@ -2252,19 +2353,20 @@ document.addEventListener("DOMContentLoaded", () => {
     body.appendChild(dot);
     setupMarquees(body, thermoMarqueeTimers);
   }
-  // Blue dot: position from the device clock (thermo.js: trainPosition), placed on the real geometry of the rows.
+  // Blue dot: position from the corrected clock (clockNow, thermo.js: trainPosition), placed on the real geometry of the rows.
   // Stops behind it are dimmed. animate: false for a jump (render, resize, return to the tab).
   function placeThermoDot(animate) {
     const body = thermo?.querySelector("#thermo-body");
     const dot = body?.querySelector("#thermo-dot");
     const rows = body ? [...body.querySelectorAll(".thermo-row")] : [];
     if (!thermoState || !dot || !rows.length) return;
-    const { position, moving } = trainPosition(thermoState.stops, Date.now());
+    const { position, moving } = trainPosition(thermoState.stops, clockNow());
     rows.forEach((row, i) => row.classList.toggle("thermo-past", i < position));
-    // Centre of a stop's circle: 15 px from the right edge of its time cell (style.css: .thermo-time::before/::after).
+    // Centre of a stop's circle: 15 px from the end edge of its time cell, right or left (style.css: .thermo-time::before/::after).
+    const rtl = isRtl();
     const point = i => {
       const cell = rows[i].firstElementChild;
-      return [cell.offsetLeft + cell.offsetWidth - 15, cell.offsetTop + cell.offsetHeight / 2];
+      return [rtl ? cell.offsetLeft + 15 : cell.offsetLeft + cell.offsetWidth - 15, cell.offsetTop + cell.offsetHeight / 2];
     };
     const lo = Math.min(rows.length - 1, Math.floor(position));
     const hi = Math.min(rows.length - 1, Math.ceil(position));
