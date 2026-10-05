@@ -829,7 +829,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   // The callback receives true when the request succeeded (even with no stop found).
   function fetchSuggestionsByLocation(lon, lat, callback) {
-    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}`;
+    const url = `https://transport.opendata.ch/v1/locations?x=${encodeURIComponent(lat)}&y=${encodeURIComponent(lon)}`;
     fetchJSON(url)
       .then(data => {
         clearStatus("network");
